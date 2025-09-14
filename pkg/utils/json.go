@@ -1,3 +1,4 @@
+// Package utils
 package utils
 
 import (
@@ -5,7 +6,7 @@ import (
 	"net/http"
 )
 
-func ReplyJson(w http.ResponseWriter, status int, body map[string]any) error {
+func ReplyJSON(w http.ResponseWriter, status int, body map[string]any) error {
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
 	return json.NewEncoder(w).Encode(body)
