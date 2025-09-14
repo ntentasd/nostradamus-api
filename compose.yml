@@ -1,0 +1,127 @@
+name: nostradamus
+services:
+  valkey-0:
+    image: valkey/valkey:latest
+    container_name: valkey-0
+    command: >
+      valkey-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip valkey-0
+    ports:
+      - "6379:6379"
+    networks:
+      nostradamus:
+        ipv4_address: 172.28.0.11
+  valkey-1:
+    image: valkey/valkey:latest
+    container_name: valkey-1
+    command: >
+      valkey-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip valkey-1
+    ports:
+      - "6380:6379"
+    networks:
+      nostradamus:
+        ipv4_address: 172.28.0.12
+  valkey-2:
+    image: valkey/valkey:latest
+    container_name: valkey-2
+    command: >
+      valkey-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip valkey-2
+    ports:
+      - "6381:6379"
+    networks:
+      nostradamus:
+        ipv4_address: 172.28.0.13
+
+  scylla-0:
+    container_name: scylla-0
+    image: scylladb/scylla:latest
+    command:
+      - --seeds=scylla-0
+      - --listen-address=scylla-0
+      - --broadcast-address=scylla-0
+      - --broadcast-rpc-address=scylla-0
+      - --rpc-address=0.0.0.0
+      - --api-address=0.0.0.0
+      - --smp=1
+      - --memory=2G
+      - --overprovisioned=1
+      - --reactor-backend=epoll
+    ports:
+      - "9042:9042"
+    networks:
+      - nostradamus
+
+  scylla-1:
+    container_name: scylla-1
+    image: scylladb/scylla:latest
+    command:
+      - --seeds=scylla-0
+      - --listen-address=scylla-1
+      - --broadcast-address=scylla-1
+      - --rpc-address=0.0.0.0
+      - --broadcast-rpc-address=scylla-1
+      - --api-address=0.0.0.0
+      - --smp=1
+      - --memory=2G
+      - --overprovisioned=1
+      - --reactor-backend=epoll
+    ports:
+      - "9043:9042"
+    networks:
+      - nostradamus
+
+  scylla-2:
+    container_name: scylla-2
+    image: scylladb/scylla:latest
+    command:
+      - --seeds=scylla-0
+      - --listen-address=scylla-2
+      - --broadcast-address=scylla-2
+      - --rpc-address=0.0.0.0
+      - --broadcast-rpc-address=scylla-2
+      - --api-address=0.0.0.0
+      - --smp=1
+      - --memory=2G
+      - --overprovisioned=1
+      - --reactor-backend=epoll
+    ports:
+      - "9044:9042"
+    networks:
+      - nostradamus
+
+  nostradamus:
+    container_name: nostradamus
+    image: nostradamus-api:latest
+    build: .
+    environment:
+      - VALKEY_NODES=valkey-0:6379,valkey-1:6380,valkey-2:6381
+      - SCYLLA_NODES=scylla-0:9042,scylla-1:9042,scylla-2:9042
+    ports:
+      - "8080:8080"
+    networks:
+      - nostradamus
+
+networks:
+  nostradamus:
+    name: nostradamus
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
