@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS sensors_data.temperatures (
+    sensor_id uuid,
+    bucket_date date,
+    timestamp timestamp,
+    value double,
+    PRIMARY KEY ((sensor_id, bucket_date), timestamp)
+) WITH CLUSTERING ORDER BY (timestamp DESC)
+    AND compaction = {
+	'class': 'TimeWindowCompactionStrategy',
+    	'compaction_window_unit': 'DAYS',
+	'compaction_window_size': 1
+    };
