@@ -3,12 +3,10 @@ package db
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
-	"gopkg.in/inf.v0"
 )
 
 type DB struct {
@@ -32,22 +30,27 @@ func (db *DB) GetLast5Values(
 		time.Millisecond*500,
 	)
 	defer cancel()
+
+	id, err := gocql.ParseUUID(sensor)
+	if err != nil {
+		return nil, err
+	}
+
 	query := db.sess.Query(`
 SELECT timestamp, value
 FROM temperatures
 WHERE sensor_id=?
 AND bucket_date=?
 ORDER BY timestamp DESC LIMIT 5
-`, sensor, date).WithContext(ctx)
+`, id, date).WithContext(ctx)
 
 	var results []types.Entry
 	iter := query.Iter()
 
 	var ts time.Time
-	var dec *inf.Dec
+	var val float64
 
-	for iter.Scan(&ts, &dec) {
-		val, _ := strconv.ParseFloat(dec.String(), 64)
+	for iter.Scan(&ts, &val) {
 		results = append(results, types.Entry{
 			Timestamp: ts,
 			Value:     val,

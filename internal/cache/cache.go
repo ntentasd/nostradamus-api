@@ -40,6 +40,11 @@ func (db *DB) Store(prefix string, entry types.Entry) error {
 		return err
 	}
 
+	_, err = db.client.Expire(ctx, prefix, time.Hour).Result()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
