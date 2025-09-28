@@ -1,4 +1,5 @@
-name: nostradamus
+name: nostradamus-platform
+
 services:
   valkey-0:
     image: valkey/valkey:latest
@@ -16,6 +17,12 @@ services:
     networks:
       nostradamus:
         ipv4_address: 172.28.0.11
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 2
+
   valkey-1:
     image: valkey/valkey:latest
     container_name: valkey-1
@@ -32,6 +39,12 @@ services:
     networks:
       nostradamus:
         ipv4_address: 172.28.0.12
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 2
+
   valkey-2:
     image: valkey/valkey:latest
     container_name: valkey-2
@@ -48,6 +61,27 @@ services:
     networks:
       nostradamus:
         ipv4_address: 172.28.0.13
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 2
+
+  valkey-init:
+    image: valkey/valkey:latest
+    container_name: valkey-init
+    depends_on:
+      valkey-0:
+        condition: service_healthy
+      valkey-1:
+        condition: service_healthy
+      valkey-2:
+        condition: service_healthy
+    entrypoint: ["/opt/scripts/init-valkey.sh"]
+    volumes:
+      - ./scripts/init-valkey.sh:/opt/scripts/init-valkey.sh:ro
+    networks:
+      - nostradamus
 
   scylla-0:
     container_name: scylla-0
@@ -67,6 +101,11 @@ services:
       - "9042:9042"
     networks:
       - nostradamus
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "SHOW HOST"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   scylla-1:
     container_name: scylla-1
@@ -86,6 +125,11 @@ services:
       - "9043:9042"
     networks:
       - nostradamus
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "SHOW HOST"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   scylla-2:
     container_name: scylla-2
@@ -105,10 +149,34 @@ services:
       - "9044:9042"
     networks:
       - nostradamus
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "SHOW HOST"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  nostradamus:
-    container_name: nostradamus
-    image: nostradamus-api:latest
+  migration:
+    container_name: migration
+    image: migrate/migrate
+    command: >
+      -path=/opt/migrations
+      -database cassandra://scylla-0:9042/sensors_meta
+      up
+    volumes:
+      - ./migrations:/opt/migrations:ro
+    networks:
+      - nostradamus
+    depends_on:
+      scylla-0:
+        condition: service_healthy
+      scylla-1:
+        condition: service_healthy
+      scylla-2:
+        condition: service_healthy
+
+  api:
+    container_name: api
+    image: api:latest
     build: .
     environment:
       - VALKEY_NODES=valkey-0:6379,valkey-1:6380,valkey-2:6381
@@ -117,10 +185,15 @@ services:
       - "8080:8080"
     networks:
       - nostradamus
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      valkey-init:
+        condition: service_completed_successfully
 
 networks:
   nostradamus:
-    name: nostradamus
+    name: nostradamus-platform
     driver: bridge
     ipam:
       config:
