@@ -30,7 +30,7 @@ func main() {
 	}
 
 	cluster := gocql.NewCluster(scyllaNodes...)
-	cluster.Keyspace = "sensors"
+	cluster.Keyspace = "sensors_data"
 	// Remove
 	cluster.DisableInitialHostLookup = true
 	cluster.DisableShardAwarePort = true
