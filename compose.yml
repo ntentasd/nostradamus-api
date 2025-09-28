@@ -155,6 +155,24 @@ services:
       timeout: 5s
       retries: 3
 
+  scylla-keyspace-init:
+    container_name: scylla-keyspace-init
+    image: scylladb/scylla:latest
+    environment:
+      - CQLSH_HOST=scylla-0
+    entrypoint: ["cqlsh", "-f", "/opt/init_keyspaces.cql"]
+    volumes:
+      - ./init_keyspaces.cql:/opt/init_keyspaces.cql:ro
+    networks:
+      - nostradamus
+    depends_on:
+      scylla-0:
+        condition: service_healthy
+      scylla-1:
+        condition: service_healthy
+      scylla-2:
+        condition: service_healthy
+
   migration:
     container_name: migration
     image: migrate/migrate
@@ -167,12 +185,8 @@ services:
     networks:
       - nostradamus
     depends_on:
-      scylla-0:
-        condition: service_healthy
-      scylla-1:
-        condition: service_healthy
-      scylla-2:
-        condition: service_healthy
+      scylla-keyspace-init:
+        condition: service_completed_successfully
 
   api:
     container_name: api
