@@ -1,6 +1,8 @@
-CREATE TABLE IF NOT EXISTS sensors_meta.fields (
+CREATE TABLE IF NOT EXISTS sensors_by_field (
     field_id uuid,
+    field_name text STATIC,
     sensor_id uuid,
     sensor_name text,
+    sensor_type text,
     PRIMARY KEY (field_id, sensor_id)
 );

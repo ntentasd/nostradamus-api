@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS sensors_meta.users_fields (
+CREATE TABLE IF NOT EXISTS sensors_meta.fields (
     user_id uuid,
     field_id uuid,
     field_name text,
