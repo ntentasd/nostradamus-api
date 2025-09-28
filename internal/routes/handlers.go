@@ -2,10 +2,10 @@ package routes
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 )
 
@@ -19,9 +19,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 	year, month, day := time.Now().Date()
-	today := fmt.Sprintf("%d-%02d-%02d", year, month, day)
+	today := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	res, err := app.cache.FetchLast5(
-		fmt.Sprintf("%s:%s:%s", "sensor", "temp-sensor-1", today),
+		fmt.Sprintf("%s:%s:%s", "sensor", "550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02")),
 	)
 	if err != nil {
 		utils.ReplyJSON(
@@ -36,8 +36,7 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Less than 5, cache is stale
 	if len(res) < 5 {
-		log.Println("Falling back to database lookup")
-		res, err = app.store.GetLast5Values("temp-sensor-1", today)
+		res, err = app.store.GetLast5Values("550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02"))
 		if err != nil {
 			utils.ReplyJSON(
 				w,
@@ -51,7 +50,7 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 		// Create pipelined function
 		for _, entry := range res {
 			app.cache.Store(
-				fmt.Sprintf("%s:%s:%s", "sensor", "temp-sensor-1", today),
+				fmt.Sprintf("%s:%s:%s", "sensor", "550e8400-e29b-41d4-a716-446655440000", today),
 				entry,
 			)
 		}
@@ -59,5 +58,54 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 
 	utils.ReplyJSON(w, http.StatusOK, Body{
 		"data": res,
+	})
+}
+
+func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
+	userIDstr := r.URL.Query().Get("user_id")
+	if userIDstr == "" {
+		http.Error(w, "missing user_id", http.StatusBadRequest)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDstr)
+	if err != nil {
+		http.Error(w, "invalid user_id", http.StatusBadRequest)
+		return
+	}
+
+	fields, err := app.store.GetFieldsByUserID(userID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("db error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusOK, Body{
+		"data": fields,
+	})
+}
+
+func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
+	fieldIDstr := r.URL.Query().Get("field_id")
+	if fieldIDstr == "" {
+		http.Error(w, "missing field_id", http.StatusBadRequest)
+		return
+	}
+
+	fieldID, err := uuid.Parse(fieldIDstr)
+	if err != nil {
+		http.Error(w, "invalid field_id", http.StatusBadRequest)
+		return
+	}
+
+	sensors, field, err := app.store.GetSensorsByFieldID(fieldID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("db error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusOK, Body{
+		"data":  sensors,
+		"field": *field,
 	})
 }
