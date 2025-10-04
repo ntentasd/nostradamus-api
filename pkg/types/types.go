@@ -49,3 +49,22 @@ func ToSensorType(sensorType string) (SensorType, error) {
 		return -1, ErrInvalidSensorType
 	}
 }
+
+type StateType string
+
+const (
+	StateTypeRunning StateType = "Running"
+	StateTypeFailed  StateType = "Failed"
+)
+
+type Job struct {
+	ID        string    `json:"id"`
+	State     StateType `json:"state"`
+	StartedAt int64     `json:"started_at"`
+}
+
+type Pipeline struct {
+	Name        string `json:"name"`
+	Query       string `json:"query"`
+	Parallelism int    `json:"parallelism"`
+}
