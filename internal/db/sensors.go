@@ -3,6 +3,8 @@ package db
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -51,6 +53,7 @@ ORDER BY timestamp DESC LIMIT 5
 	var val float64
 
 	for iter.Scan(&ts, &val) {
+		val, _ = strconv.ParseFloat(fmt.Sprintf("%.4f", val), 64)
 		results = append(results, types.Entry{
 			Timestamp: ts,
 			Value:     val,
