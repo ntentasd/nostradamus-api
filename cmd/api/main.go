@@ -20,6 +20,7 @@ var (
 func main() {
 	scyllaEnv := os.Getenv("SCYLLA_NODES")
 	valkeyEnv := os.Getenv("VALKEY_NODES")
+	arroyoURL := os.Getenv("ARROYO_URL")
 
 	if scyllaEnv != "" {
 		scyllaNodes = strings.Split(scyllaEnv, ",")
@@ -47,7 +48,7 @@ func main() {
 	cache := cache.New(valkeyNodes...)
 	defer cache.Close()
 
-	mux := routes.NewMux(store, cache)
+	mux := routes.NewMux(store, cache, arroyoURL)
 
 	log.Println("Listening on port :8080...")
 	if err := http.ListenAndServe(":8080", mux); err != nil {

@@ -9,10 +9,8 @@ import (
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 )
 
-type Body map[string]any
-
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	utils.ReplyJSON(w, http.StatusOK, Body{
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"state": "healthy",
 	})
 }
@@ -56,7 +54,7 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	utils.ReplyJSON(w, http.StatusOK, Body{
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": res,
 	})
 }
@@ -80,7 +78,7 @@ func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.ReplyJSON(w, http.StatusOK, Body{
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": fields,
 	})
 }
@@ -104,7 +102,7 @@ func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.ReplyJSON(w, http.StatusOK, Body{
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data":  sensors,
 		"field": *field,
 	})

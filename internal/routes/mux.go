@@ -11,16 +11,20 @@ import (
 )
 
 type App struct {
-	store *db.DB
-	cache *cache.DB
+	store  *db.DB
+	cache  *cache.DB
+	client *ArroyoClient
 }
 
-func NewMux(store *db.DB, cache *cache.DB) http.Handler {
+func NewMux(store *db.DB, cache *cache.DB, arroyoURL string) http.Handler {
 	mux := http.NewServeMux()
+
+	client := New(arroyoURL)
 
 	app := App{
 		store,
 		cache,
+		client,
 	}
 
 	// health check
@@ -35,6 +39,10 @@ func NewMux(store *db.DB, cache *cache.DB) http.Handler {
 	// get my fields
 	mux.HandleFunc("/fields", app.fieldsHandler)
 	mux.HandleFunc("/sensors", app.sensorsHandler)
+
+	// arroyo command routes
+	mux.HandleFunc("/jobs", app.listJobs)
+	mux.HandleFunc("/jobs/run", app.createPipeline)
 
 	return utils.WithCORS(mux)
 }
