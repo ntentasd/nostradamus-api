@@ -18,7 +18,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 	year, month, day := time.Now().Date()
 	today := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	res, err := app.cache.FetchLast5(
+	res, err := app.Cache.FetchLast5(
 		fmt.Sprintf("%s:%s:%s", "sensor", "550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02")),
 	)
 	if err != nil {
@@ -34,7 +34,7 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Less than 5, cache is stale
 	if len(res) < 5 {
-		res, err = app.store.GetLast5Values("550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02"))
+		res, err = app.Store.GetLast5Values("550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02"))
 		if err != nil {
 			utils.ReplyJSON(
 				w,
@@ -47,7 +47,7 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// Create pipelined function
 		for _, entry := range res {
-			app.cache.Store(
+			app.Cache.Store(
 				fmt.Sprintf("%s:%s:%s", "sensor", "550e8400-e29b-41d4-a716-446655440000", today),
 				entry,
 			)
@@ -72,7 +72,7 @@ func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fields, err := app.store.GetFieldsByUserID(userID)
+	fields, err := app.Store.GetFieldsByUserID(userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("db error: %v", err), http.StatusInternalServerError)
 		return
@@ -96,7 +96,7 @@ func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sensors, field, err := app.store.GetSensorsByFieldID(fieldID)
+	sensors, field, err := app.Store.GetSensorsByFieldID(fieldID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("db error: %v", err), http.StatusInternalServerError)
 		return
