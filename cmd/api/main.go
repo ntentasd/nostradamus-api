@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/ntentasd/nostradamus-api/internal/arroyo"
 	"github.com/ntentasd/nostradamus-api/internal/cache"
 	"github.com/ntentasd/nostradamus-api/internal/db"
 	routes "github.com/ntentasd/nostradamus-api/internal/routes"
+	"github.com/ntentasd/nostradamus-api/internal/worker"
 )
 
 var (
@@ -48,7 +52,19 @@ func main() {
 	cache := cache.New(valkeyNodes...)
 	defer cache.Close()
 
-	mux := routes.NewMux(store, cache, arroyoURL)
+	ac := arroyo.New(arroyoURL)
+
+	app := routes.App{
+		Store:        store,
+		Cache:        cache,
+		ArroyoClient: ac,
+	}
+
+	mux := routes.NewMux(&app)
+
+	sv := worker.NewSupervisor(ac, time.Second*5)
+	sv.Start(context.Background())
+	defer sv.Stop()
 
 	log.Println("Listening on port :8080...")
 	if err := http.ListenAndServe(":8080", mux); err != nil {

@@ -4,28 +4,12 @@ package routes
 import (
 	"net/http"
 
-	"github.com/ntentasd/nostradamus-api/internal/cache"
-	"github.com/ntentasd/nostradamus-api/internal/db"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type App struct {
-	store  *db.DB
-	cache  *cache.DB
-	client *ArroyoClient
-}
-
-func NewMux(store *db.DB, cache *cache.DB, arroyoURL string) http.Handler {
+func NewMux(app *App) http.Handler {
 	mux := http.NewServeMux()
-
-	client := New(arroyoURL)
-
-	app := App{
-		store,
-		cache,
-		client,
-	}
 
 	// health check
 	mux.HandleFunc("/healthz", healthHandler)
@@ -36,13 +20,15 @@ func NewMux(store *db.DB, cache *cache.DB, arroyoURL string) http.Handler {
 	// get 5 latest values
 	mux.HandleFunc("/latest", app.latestHandler)
 
-	// get my fields
+	// get fields & sensors
 	mux.HandleFunc("/fields", app.fieldsHandler)
 	mux.HandleFunc("/sensors", app.sensorsHandler)
 
 	// arroyo command routes
-	mux.HandleFunc("/jobs", app.listJobs)
-	mux.HandleFunc("/jobs/run", app.createPipeline)
+	mux.HandleFunc("/jobs", app.ListJobs)
+	mux.HandleFunc("/jobs/{id}", app.GetJob)
+	mux.HandleFunc("/jobs/run", app.CreatePipeline)
+	mux.HandleFunc("/pipelines", app.ListPipelines)
 
 	return utils.WithCORS(mux)
 }
