@@ -21,8 +21,26 @@ func NewMux(app *App) http.Handler {
 	mux.HandleFunc("/latest", app.latestHandler)
 
 	// get fields & sensors
-	mux.HandleFunc("/fields", app.fieldsHandler)
-	mux.HandleFunc("/sensors", app.sensorsHandler)
+	mux.HandleFunc("/fields", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			app.fieldsHandler(w, r)
+		case http.MethodPost:
+			app.registerFieldHandler(w, r)
+		default:
+			utils.ReplyMethodNotAllowed(w)
+		}
+	})
+	mux.HandleFunc("/sensors", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			app.sensorsHandler(w, r)
+		case http.MethodPost:
+			app.registerSensorHandler(w, r)
+		default:
+			utils.ReplyMethodNotAllowed(w)
+		}
+	})
 
 	// arroyo command routes
 	mux.HandleFunc("/jobs", app.ListJobs)

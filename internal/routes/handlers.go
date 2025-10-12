@@ -1,11 +1,14 @@
 package routes
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ntentasd/nostradamus-api/internal/db"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 )
 
@@ -88,6 +91,53 @@ func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (app *App) registerFieldHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.ReplyMethodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		UserID    string `json:"user_id"`
+		FieldName string `json:"field_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	userUUID, err := uuid.Parse(req.UserID)
+	if err != nil {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "invalid user_id",
+		})
+		return
+	}
+
+	field, err := app.Store.RegisterField(userUUID, req.FieldName)
+	if err != nil {
+		var dupErr *db.FieldAlreadyExistsError
+		if errors.As(err, &dupErr) {
+			utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+				"error": dupErr.Error(),
+			})
+			return
+		}
+
+		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusCreated, utils.Body{
+		"data": field,
+	})
+}
+
 func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.ReplyMethodNotAllowed(w)
@@ -115,5 +165,53 @@ func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data":  sensors,
 		"field": *field,
+	})
+}
+
+func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.ReplyMethodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		FieldID    string `json:"field_id"`
+		SensorName string `json:"sensor_name"`
+		SensorType int    `json:"sensor_type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	fieldUUID, err := uuid.Parse(req.FieldID)
+	if err != nil {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "invalid field UUID",
+		})
+		return
+	}
+
+	// Register sensor via DB layer
+	sensor, err := app.Store.RegisterSensor(fieldUUID, req.SensorName, req.SensorType)
+	if err != nil {
+		var dupErr *db.SensorAlreadyExistsError
+		if errors.As(err, &dupErr) {
+			utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+				"error": dupErr.Error(),
+			})
+			return
+		}
+		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusCreated, utils.Body{
+		"data": sensor,
 	})
 }
