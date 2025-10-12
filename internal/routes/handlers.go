@@ -60,6 +60,11 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.ReplyMethodNotAllowed(w)
+		return
+	}
+
 	userIDstr := r.URL.Query().Get("user_id")
 	if userIDstr == "" {
 		http.Error(w, "missing user_id", http.StatusBadRequest)
@@ -84,6 +89,11 @@ func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.ReplyMethodNotAllowed(w)
+		return
+	}
+
 	fieldIDstr := r.URL.Query().Get("field_id")
 	if fieldIDstr == "" {
 		http.Error(w, "missing field_id", http.StatusBadRequest)
