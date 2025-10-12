@@ -34,19 +34,27 @@ func main() {
 		valkeyNodes = strings.Split(valkeyEnv, ",")
 	}
 
-	cluster := gocql.NewCluster(scyllaNodes...)
-	cluster.Keyspace = "sensors_data"
+	clusterMeta := gocql.NewCluster(scyllaNodes...)
+	clusterMeta.Keyspace = "sensors_meta"
 	// Remove
-	cluster.DisableInitialHostLookup = true
-	cluster.DisableShardAwarePort = true
-
-	sess, err := cluster.CreateSession()
+	clusterMeta.DisableInitialHostLookup = true
+	clusterMeta.DisableShardAwarePort = true
+	metaSess, err := clusterMeta.CreateSession()
 	if err != nil {
 		log.Fatalf("unable to connect: %v", err)
 	}
-	defer sess.Close()
 
-	store := db.New(sess)
+	clusterData := gocql.NewCluster(scyllaNodes...)
+	clusterData.Keyspace = "sensors_data"
+	// Remove
+	clusterData.DisableInitialHostLookup = true
+	clusterData.DisableShardAwarePort = true
+	dataSess, err := clusterData.CreateSession()
+	if err != nil {
+		log.Fatalf("unable to connect: %v", err)
+	}
+
+	store := db.New(metaSess, dataSess)
 	defer store.Close()
 
 	cache := cache.New(valkeyNodes...)
