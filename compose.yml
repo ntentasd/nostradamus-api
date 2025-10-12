@@ -208,6 +208,9 @@ services:
       - VALKEY_NODES=valkey-0:6379,valkey-1:6380,valkey-2:6381
       - SCYLLA_NODES=scylla-0:9042,scylla-1:9042,scylla-2:9042
       - ARROYO_URL=192.168.1.157
+      - EMQX_URL=192.168.1.158:18083
+      - EMQX_API_KEY=${EMQX_API_KEY}
+      - EMQX_API_SECRET=${EMQX_API_SECRET}
     ports:
       - "8080:8080"
     networks:

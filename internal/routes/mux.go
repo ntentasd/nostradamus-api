@@ -31,6 +31,8 @@ func NewMux(app *App) http.Handler {
 			utils.ReplyMethodNotAllowed(w)
 		}
 	})
+	mux.HandleFunc("/field", app.getFieldByIDHandler)
+
 	mux.HandleFunc("/sensors", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -41,6 +43,7 @@ func NewMux(app *App) http.Handler {
 			utils.ReplyMethodNotAllowed(w)
 		}
 	})
+	mux.HandleFunc("/sensors/credentials", app.getSensorCredentialsHandler)
 
 	// arroyo command routes
 	mux.HandleFunc("/jobs", app.ListJobs)

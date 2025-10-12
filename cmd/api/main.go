@@ -12,6 +12,7 @@ import (
 	"github.com/ntentasd/nostradamus-api/internal/arroyo"
 	"github.com/ntentasd/nostradamus-api/internal/cache"
 	"github.com/ntentasd/nostradamus-api/internal/db"
+	"github.com/ntentasd/nostradamus-api/internal/emqx"
 	routes "github.com/ntentasd/nostradamus-api/internal/routes"
 	"github.com/ntentasd/nostradamus-api/internal/worker"
 )
@@ -62,10 +63,13 @@ func main() {
 
 	ac := arroyo.New(arroyoURL)
 
+	emqxClient := emqx.New()
+
 	app := routes.App{
 		Store:        store,
 		Cache:        cache,
 		ArroyoClient: ac,
+		EmqxClient:   emqxClient,
 	}
 
 	mux := routes.NewMux(&app)
