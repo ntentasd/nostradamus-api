@@ -24,7 +24,12 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 	year, month, day := time.Now().Date()
 	today := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	res, err := app.Cache.FetchLast5(
-		fmt.Sprintf("%s:%s:%s", "sensor", "550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02")),
+		fmt.Sprintf(
+			"%s:%s:%s",
+			"sensor",
+			"550e8400-e29b-41d4-a716-446655440000",
+			today.Format("2006-01-02"),
+		),
 	)
 	if err != nil {
 		utils.ReplyJSON(
@@ -39,7 +44,10 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Less than 5, cache is stale
 	if len(res) < 5 {
-		res, err = app.Store.GetLast5Values("550e8400-e29b-41d4-a716-446655440000", today.Format("2006-01-02"))
+		res, err = app.Store.GetLast5Values(
+			"550e8400-e29b-41d4-a716-446655440000",
+			today.Format("2006-01-02"),
+		)
 		if err != nil {
 			utils.ReplyJSON(
 				w,
@@ -53,7 +61,12 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 		// Create pipelined function
 		for _, entry := range res {
 			app.Cache.Store(
-				fmt.Sprintf("%s:%s:%s", "sensor", "550e8400-e29b-41d4-a716-446655440000", today),
+				fmt.Sprintf(
+					"%s:%s:%s",
+					"sensor",
+					"550e8400-e29b-41d4-a716-446655440000",
+					today,
+				),
 				entry,
 			)
 		}
@@ -84,7 +97,11 @@ func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
 
 	fields, err := app.Store.GetFieldsByUserID(userID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("db error: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w,
+			fmt.Sprintf("db error: %v", err),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -202,7 +219,11 @@ func (app *App) sensorsHandler(w http.ResponseWriter, r *http.Request) {
 
 	sensors, field, err := app.Store.GetSensorsByFieldID(fieldID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("db error: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w,
+			fmt.Sprintf("db error: %v", err),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -239,7 +260,11 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sensor, err := app.Store.RegisterSensor(fieldUUID, req.SensorName, req.SensorType)
+	sensor, err := app.Store.RegisterSensor(
+		fieldUUID,
+		req.SensorName,
+		req.SensorType,
+	)
 	if err != nil {
 		var dupErr *db.SensorAlreadyExistsError
 		if errors.As(err, &dupErr) {
@@ -254,18 +279,35 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := fmt.Sprintf("%s_%s", sensor.SensorID.String()[:8], req.SensorName)
+	username := fmt.Sprintf(
+		"%s_%s",
+		sensor.SensorID.String()[:8],
+		req.SensorName,
+	)
 	password := uuid.NewString()[:12]
 
-	if _, err := app.CreateUser(username, password, false); err != nil {
-		log.Printf("[WARN] Failed to create EMQX user for sensor %s: %v", username, err)
+	if _, err = app.CreateUser(username, password, false); err != nil {
+		log.Printf(
+			"[WARN] Failed to create EMQX user for sensor %s: %v",
+			username,
+			err,
+		)
 	} else {
 		log.Printf("Created EMQX user %s for sensor %s", username, sensor.SensorName)
 	}
 
-	err = app.Store.StoreSensorCredentials(gocql.UUID(fieldUUID), gocql.UUID(sensor.SensorID), username, password)
+	err = app.Store.StoreSensorCredentials(
+		gocql.UUID(fieldUUID),
+		gocql.UUID(sensor.SensorID),
+		username,
+		password,
+	)
 	if err != nil {
-		log.Printf("[WARN] failed to store MQTT credentials for sensor %s: %v", sensor.SensorID, err)
+		log.Printf(
+			"[WARN] failed to store MQTT credentials for sensor %s: %v",
+			sensor.SensorID,
+			err,
+		)
 	}
 
 	utils.ReplyJSON(w, http.StatusCreated, utils.Body{
@@ -277,7 +319,10 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (app *App) getSensorCredentialsHandler(w http.ResponseWriter, r *http.Request) {
+func (app *App) getSensorCredentialsHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
 	if r.Method != http.MethodGet {
 		utils.ReplyMethodNotAllowed(w)
 		return
