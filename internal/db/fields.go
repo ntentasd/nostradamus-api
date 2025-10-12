@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -9,13 +10,26 @@ import (
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 )
 
+type FieldAlreadyExistsError struct {
+	FieldName string
+}
+
+func (e *FieldAlreadyExistsError) Error() string {
+	return fmt.Sprintf("field '%s' already exists", e.FieldName)
+}
+
+func (e *FieldAlreadyExistsError) Is(target error) bool {
+	_, ok := target.(*FieldAlreadyExistsError)
+	return ok
+}
+
 func (db *DB) GetFieldsByUserID(userID uuid.UUID) ([]types.Field, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
 	defer cancel()
 
-	query := db.sess.Query(`
+	query := db.Meta.Query(`
 SELECT field_id, field_name
-FROM sensors_meta.fields
+FROM fields
 WHERE user_id = ?
 `, gocql.UUID(userID)).WithContext(ctx)
 
@@ -44,47 +58,46 @@ func (db *DB) GetFieldByID(fieldID uuid.UUID) ([]types.Field, error) {
 	return nil, nil
 }
 
-func (db *DB) GetSensorsByFieldID(fieldID uuid.UUID) ([]types.Sensor, *types.Field, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
+func (db *DB) RegisterField(userID uuid.UUID, fieldName string) (*types.Field, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	query := db.sess.Query(`
-SELECT sensor_id, sensor_name, sensor_type, field_name
-FROM sensors_meta.sensors_by_field
-WHERE field_id = ?
-`, gocql.UUID(fieldID)).WithContext(ctx)
+	checkQuery := db.Meta.Query(`
+SELECT field_id FROM fields
+WHERE user_id = ?
+`, gocql.UUID(userID)).WithContext(ctx)
 
-	var results []types.Sensor
-	iter := query.Iter()
-
-	var (
-		sensorID   uuid.UUID
-		sensorName string
-		sensorType string
-		fieldName  string
-	)
-
-	for iter.Scan(&sensorID, &sensorName, &sensorType, &fieldName) {
-		sType, err := types.ToSensorType(sensorType)
-		if err != nil {
-			return nil, &types.Field{}, err
+	iter := checkQuery.Iter()
+	var existingID gocql.UUID
+	for iter.Scan(&existingID) {
+		var existingName string
+		subQuery := db.Meta.Query(`
+SELECT field_name FROM fields
+WHERE user_id = ? AND field_id = ?
+`, gocql.UUID(userID), existingID).WithContext(ctx)
+		if err := subQuery.Scan(&existingName); err == nil && existingName == fieldName {
+			return nil, &FieldAlreadyExistsError{
+				FieldName: fieldName,
+			}
 		}
-
-		results = append(results, types.Sensor{
-			SensorID:   sensorID,
-			SensorName: sensorName,
-			SensorType: sType,
-		})
+	}
+	if err := iter.Close(); err != nil {
+		return nil, err
 	}
 
-	field := types.Field{
+	fieldID := uuid.New()
+	insertQuery := db.Meta.Query(`
+INSERT INTO fields (user_id, field_id, field_name)
+VALUES (?, ?, ?)
+`, gocql.UUID(userID), gocql.UUID(fieldID), fieldName).WithContext(ctx)
+
+	if err := insertQuery.Exec(); err != nil {
+		return nil, err
+	}
+
+	return &types.Field{
+		UserID:    &userID,
 		FieldID:   fieldID,
 		FieldName: fieldName,
-	}
-
-	if err := iter.Close(); err != nil {
-		return nil, &types.Field{}, err
-	}
-
-	return results, &field, nil
+	}, nil
 }
