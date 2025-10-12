@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 )
+
+var ErrFieldNotFound = errors.New("field not found")
 
 type FieldAlreadyExistsError struct {
 	FieldName string
@@ -54,8 +57,31 @@ WHERE user_id = ?
 	return results, nil
 }
 
-func (db *DB) GetFieldByID(fieldID uuid.UUID) ([]types.Field, error) {
-	return nil, nil
+func (db *DB) GetFieldByID(fieldID uuid.UUID) (*types.Field, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	var userID gocql.UUID
+	var fieldName string
+
+	err := db.Meta.Query(`
+SELECT user_id, field_name
+FROM fields
+WHERE field_id = ?
+ALLOW FILTERING
+`, gocql.UUID(fieldID)).WithContext(ctx).Scan(&userID, &fieldName)
+	if err != nil {
+		if err == gocql.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &types.Field{
+		UserID:    (*uuid.UUID)(&userID),
+		FieldID:   fieldID,
+		FieldName: fieldName,
+	}, nil
 }
 
 func (db *DB) RegisterField(userID uuid.UUID, fieldName string) (*types.Field, error) {

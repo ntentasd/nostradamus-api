@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
+	"github.com/gocql/gocql"
 	"github.com/google/uuid"
 	"github.com/ntentasd/nostradamus-api/internal/db"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
@@ -88,6 +90,48 @@ func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {
 
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": fields,
+	})
+}
+
+func (app *App) getFieldByIDHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.ReplyMethodNotAllowed(w)
+		return
+	}
+
+	fieldIDstr := r.URL.Query().Get("field_id")
+	if fieldIDstr == "" {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "missing field_id",
+		})
+		return
+	}
+
+	fieldID, err := uuid.Parse(fieldIDstr)
+	if err != nil {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "invalid field_id",
+		})
+		return
+	}
+
+	field, err := app.Store.GetFieldByID(fieldID)
+	if err != nil {
+		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if field == nil {
+		utils.ReplyJSON(w, http.StatusNotFound, utils.Body{
+			"data": nil,
+		})
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
+		"data": field,
 	})
 }
 
@@ -195,7 +239,6 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Register sensor via DB layer
 	sensor, err := app.Store.RegisterSensor(fieldUUID, req.SensorName, req.SensorType)
 	if err != nil {
 		var dupErr *db.SensorAlreadyExistsError
@@ -211,7 +254,67 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	username := fmt.Sprintf("%s_%s", sensor.SensorID.String()[:8], req.SensorName)
+	password := uuid.NewString()[:12]
+
+	if _, err := app.CreateUser(username, password, false); err != nil {
+		log.Printf("[WARN] Failed to create EMQX user for sensor %s: %v", username, err)
+	} else {
+		log.Printf("Created EMQX user %s for sensor %s", username, sensor.SensorName)
+	}
+
+	err = app.Store.StoreSensorCredentials(gocql.UUID(fieldUUID), gocql.UUID(sensor.SensorID), username, password)
+	if err != nil {
+		log.Printf("[WARN] failed to store MQTT credentials for sensor %s: %v", sensor.SensorID, err)
+	}
+
 	utils.ReplyJSON(w, http.StatusCreated, utils.Body{
-		"data": sensor,
+		"data": map[string]any{
+			"sensor":    sensor,
+			"mqtt_user": username,
+			"mqtt_pass": password,
+		},
+	})
+}
+
+func (app *App) getSensorCredentialsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.ReplyMethodNotAllowed(w)
+		return
+	}
+
+	sensorIDStr := r.URL.Query().Get("sensor_id")
+	if sensorIDStr == "" {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "missing sensor_id",
+		})
+		return
+	}
+
+	sensorID, err := uuid.Parse(sensorIDStr)
+	if err != nil {
+		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
+			"error": "invalid sensor_id",
+		})
+		return
+	}
+
+	creds, err := app.Store.GetSensorCredentials(sensorID)
+	if err != nil {
+		if errors.Is(err, db.ErrSensorNotFound) {
+			utils.ReplyJSON(w, http.StatusNotFound, utils.Body{
+				"error": "sensor not found",
+			})
+			return
+		}
+
+		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
+		"data": creds,
 	})
 }

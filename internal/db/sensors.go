@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -65,7 +66,7 @@ ORDER BY timestamp DESC LIMIT 5
 }
 
 func (db *DB) GetSensorsByFieldID(fieldID uuid.UUID) ([]types.Sensor, *types.Field, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2000*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	query := db.Meta.Query(`
@@ -175,5 +176,50 @@ VALUES (?, ?, ?)
 		SensorID:   newID,
 		SensorName: sensorName,
 		SensorType: types.SensorType(sensorType),
+	}, nil
+}
+
+func (db *DB) StoreSensorCredentials(fieldID gocql.UUID, sensorID gocql.UUID, mqttUser, mqttPass string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	query := db.Meta.Query(`
+UPDATE sensors_by_field
+SET mqtt_username = ?, mqtt_password = ?
+WHERE field_id = ? AND sensor_id = ?
+`, mqttUser, mqttPass, fieldID, sensorID).WithContext(ctx)
+
+	return query.Exec()
+}
+
+var ErrSensorNotFound = errors.New("sensor not found")
+
+type SensorCredentials struct {
+	MqttUser string `json:"username"`
+	MqttPass string `json:"password"`
+}
+
+func (db *DB) GetSensorCredentials(sensorID uuid.UUID) (*SensorCredentials, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	query := db.Meta.Query(`
+SELECT mqtt_username, mqtt_password
+FROM sensors_by_field
+WHERE sensor_id = ?
+ALLOW FILTERING
+`, gocql.UUID(sensorID)).WithContext(ctx)
+
+	var username, password string
+	if err := query.Scan(&username, &password); err != nil {
+		if err == gocql.ErrNotFound {
+			return nil, ErrSensorNotFound
+		}
+		return nil, err
+	}
+
+	return &SensorCredentials{
+		MqttUser: username,
+		MqttPass: password,
 	}, nil
 }
