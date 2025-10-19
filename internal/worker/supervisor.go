@@ -34,16 +34,16 @@ func (s *Supervisor) Start(ctx context.Context) {
 		ticker := time.NewTicker(s.Interval)
 		defer ticker.Stop()
 
-		log.Println("[supervisor] started pipeline monitor")
+		log.Println("[Supervisor] started pipeline monitor")
 
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("[supervisor] stopped")
+				log.Println("[Supervisor] stopped")
 				return
 			case <-ticker.C:
 				if err := s.checkAndRestartPipelines(); err != nil {
-					log.Printf("[supervisor] error: %v", err)
+					log.Printf("[Supervisor] error: %v", err)
 				}
 			}
 		}
@@ -80,7 +80,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 	for _, p := range payload.Data {
 		jobResp, err := s.AC.Get(fmt.Sprintf("/api/v1/pipelines/%s/jobs", p.ID))
 		if err != nil {
-			log.Printf("[supervisor] failed to fetch jobs for pipeline %s: %v", p.ID, err)
+			log.Printf("[Supervisor] failed to fetch jobs for pipeline %s: %v", p.ID, err)
 			continue
 		}
 
@@ -92,7 +92,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 			} `json:"data"`
 		}
 		if err := json.NewDecoder(jobResp.Body).Decode(&jobs); err != nil {
-			log.Printf("[supervisor] decode error for %s: %v", p.ID, err)
+			log.Printf("[Supervisor] decode error for %s: %v", p.ID, err)
 			jobResp.Body.Close()
 			continue
 		}
@@ -102,7 +102,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 		hasFailed := false
 		for _, j := range jobs.Data {
 			if j.State == types.StateTypeStopped || j.State == types.StateTypeFailed {
-				log.Printf("[supervisor] pipeline %s (%s) has failed job %s - reason: %s",
+				log.Printf("[Supervisor] pipeline %s (%s) has failed job %s - reason: %s",
 					p.Name, p.ID, j.ID, j.Failed)
 				hasFailed = true
 				break
@@ -111,11 +111,11 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 
 		// restart pipeline if needed
 		if hasFailed {
-			log.Printf("[supervisor] restarting pipeline %s...", p.ID)
+			log.Printf("[Supervisor] restarting pipeline %s...", p.ID)
 			if err := s.AC.RestartPipeline(p.ID); err != nil {
-				log.Printf("[supervisor] restart failed for %s: %v", p.ID, err)
+				log.Printf("[Supervisor] restart failed for %s: %v", p.ID, err)
 			} else {
-				log.Printf("[supervisor] pipeline %s restarted successfully", p.ID)
+				log.Printf("[Supervisor] pipeline %s restarted successfully", p.ID)
 			}
 		}
 	}
