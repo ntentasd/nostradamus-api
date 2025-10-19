@@ -2,6 +2,8 @@ package arroyo
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/ntentasd/nostradamus-api/pkg/types"
@@ -103,4 +105,32 @@ FROM
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": wrapper.Data,
 	})
+}
+
+// TODO: merge with upper method, clean up
+func (ac *ArroyoClient) CreatePipelineInternal(name, query string, parallelism int) (*PipelineResponse, error) {
+	payload := map[string]any{
+		"name":                     name,
+		"query":                    query,
+		"parallelism":              parallelism,
+		"checkpointIntervalMicros": 60000000,
+		"udfs":                     []any{},
+	}
+
+	resp, err := ac.Post("/api/v1/pipelines", payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reach Arroyo API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("Arroyo returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var out PipelineResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to decode Arroyo response: %w", err)
+	}
+	return &out, nil
 }
