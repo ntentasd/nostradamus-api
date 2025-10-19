@@ -13,19 +13,22 @@ import (
 	"github.com/ntentasd/nostradamus-api/internal/cache"
 	"github.com/ntentasd/nostradamus-api/internal/db"
 	"github.com/ntentasd/nostradamus-api/internal/emqx"
+	"github.com/ntentasd/nostradamus-api/internal/kafka"
 	routes "github.com/ntentasd/nostradamus-api/internal/routes"
 	"github.com/ntentasd/nostradamus-api/internal/worker"
 )
 
 var (
-	scyllaNodes []string
-	valkeyNodes []string
+	scyllaNodes  []string
+	valkeyNodes  []string
+	kafkaBrokers []string
 )
 
 func main() {
 	scyllaEnv := os.Getenv("SCYLLA_NODES")
 	valkeyEnv := os.Getenv("VALKEY_NODES")
 	arroyoURL := os.Getenv("ARROYO_URL")
+	kafkaEnv := os.Getenv("KAFKA_BROKERS")
 
 	if scyllaEnv != "" {
 		scyllaNodes = strings.Split(scyllaEnv, ",")
@@ -33,6 +36,10 @@ func main() {
 
 	if valkeyEnv != "" {
 		valkeyNodes = strings.Split(valkeyEnv, ",")
+	}
+
+	if kafkaEnv != "" {
+		kafkaBrokers = strings.Split(kafkaEnv, ",")
 	}
 
 	clusterMeta := gocql.NewCluster(scyllaNodes...)
@@ -63,6 +70,30 @@ func main() {
 
 	ac := arroyo.New(arroyoURL)
 
+	profiles, err := ac.ListConnectionProfiles()
+	if err != nil {
+		log.Fatalf("failed to list Arroyo connection profiles: %v", err)
+	}
+
+	var pCache arroyo.ProfileCache
+	for _, p := range profiles {
+		switch p.Connector {
+		case "kafka":
+			pCache.KafkaProfileID = p.ID
+		case "scylla":
+			if strings.Contains(p.Name, "docker") {
+				pCache.ScyllaProfileID = p.ID
+			}
+		}
+	}
+
+	if pCache.KafkaProfileID == "" || pCache.ScyllaProfileID == "" {
+		log.Fatalf("missing Kafka or Scylla profile in Arroyo")
+	}
+
+	log.Printf("[Arroyo] Kafka profile: %s | Scylla profile: %s",
+		pCache.KafkaProfileID, pCache.ScyllaProfileID)
+
 	emqxClient := emqx.New()
 
 	app := routes.App{
@@ -73,6 +104,12 @@ func main() {
 	}
 
 	mux := routes.NewMux(&app)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	watcher := kafka.NewWatcher(kafkaBrokers, ac, pCache)
+	go watcher.Run(ctx)
 
 	sv := worker.NewSupervisor(ac, time.Second*5)
 	sv.Start(context.Background())

@@ -211,6 +211,7 @@ services:
       - EMQX_URL=192.168.1.158:18083
       - EMQX_API_KEY=${EMQX_API_KEY}
       - EMQX_API_SECRET=${EMQX_API_SECRET}
+      - KAFKA_BROKERS=192.168.1.154:9093,192.168.1.155:9093
     ports:
       - "8080:8080"
     networks:
