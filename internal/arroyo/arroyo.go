@@ -25,6 +25,17 @@ func New(baseURL string) *ArroyoClient {
 	}
 }
 
+const JSONSchema = `{
+  "type": "object",
+  "properties": {
+    "sensor_id": { "type": "string", "format": "uuid" },
+    "bucket_date": { "type": "string", "format": "date" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "value": { "type": "number" }
+  },
+  "required": ["sensor_id", "bucket_date", "timestamp", "value"]
+}`
+
 func (ac *ArroyoClient) Get(path string) (*http.Response, error) {
 	url := fmt.Sprintf("http://%s%s", ac.BaseURL, path)
 	return ac.Client.Get(url)
