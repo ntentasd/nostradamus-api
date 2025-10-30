@@ -20,13 +20,11 @@ import (
 
 var (
 	scyllaNodes  []string
-	valkeyNodes  []string
 	kafkaBrokers []string
 )
 
 func main() {
 	scyllaEnv := os.Getenv("SCYLLA_NODES")
-	valkeyEnv := os.Getenv("VALKEY_NODES")
 	arroyoURL := os.Getenv("ARROYO_URL")
 	kafkaEnv := os.Getenv("KAFKA_BROKERS")
 
@@ -34,19 +32,14 @@ func main() {
 		scyllaNodes = strings.Split(scyllaEnv, ",")
 	}
 
-	if valkeyEnv != "" {
-		valkeyNodes = strings.Split(valkeyEnv, ",")
-	}
-
 	if kafkaEnv != "" {
 		kafkaBrokers = strings.Split(kafkaEnv, ",")
 	}
 
+	log.Printf("Scylla nodes parsed: %+v", scyllaNodes)
+
 	clusterMeta := gocql.NewCluster(scyllaNodes...)
 	clusterMeta.Keyspace = "sensors_meta"
-	// Remove
-	clusterMeta.DisableInitialHostLookup = true
-	clusterMeta.DisableShardAwarePort = true
 	metaSess, err := clusterMeta.CreateSession()
 	if err != nil {
 		log.Fatalf("unable to connect: %v", err)
@@ -54,9 +47,6 @@ func main() {
 
 	clusterData := gocql.NewCluster(scyllaNodes...)
 	clusterData.Keyspace = "sensors_data"
-	// Remove
-	clusterData.DisableInitialHostLookup = true
-	clusterData.DisableShardAwarePort = true
 	dataSess, err := clusterData.CreateSession()
 	if err != nil {
 		log.Fatalf("unable to connect: %v", err)
@@ -65,7 +55,7 @@ func main() {
 	store := db.New(metaSess, dataSess)
 	defer store.Close()
 
-	cache := cache.New(valkeyNodes...)
+	cache := cache.New()
 	defer cache.Close()
 
 	ac := arroyo.New(arroyoURL)
@@ -81,9 +71,7 @@ func main() {
 		case "kafka":
 			pCache.KafkaProfileID = p.ID
 		case "scylla":
-			if strings.Contains(p.Name, "docker") {
-				pCache.ScyllaProfileID = p.ID
-			}
+			pCache.ScyllaProfileID = p.ID
 		}
 	}
 

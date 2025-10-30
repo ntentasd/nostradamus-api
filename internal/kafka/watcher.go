@@ -159,7 +159,7 @@ func (w *Watcher) createArroyoFlow(topic string) error {
 
 	query := fmt.Sprintf(`
 INSERT INTO %s
-SELECT * FROM %s;
+SELECT * FROM "%s";
 `, scyllaName, kafkaName)
 
 	if _, err := w.client.CreatePipelineInternal(topic, query, 1); err != nil {
