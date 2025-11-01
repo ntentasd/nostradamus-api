@@ -10,6 +10,24 @@ import (
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 )
 
+func (ac *ArroyoClient) ListPipelinesInternal() ([]PipelineResponse, error) {
+	resp, err := ac.Get("/api/v1/pipelines")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var wrapper struct {
+		Data []PipelineResponse `json:"data"`
+	}
+
+	if err = json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+		return nil, err
+	}
+
+	return wrapper.Data, nil
+}
+
 func (ac *ArroyoClient) ListPipelines(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		utils.ReplyMethodNotAllowed(w)
@@ -18,30 +36,15 @@ func (ac *ArroyoClient) ListPipelines(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 
-	resp, err := ac.Get("/api/v1/pipelines")
+	pipelines, err := ac.ListPipelinesInternal()
 	if err != nil {
-		utils.ReplyJSON(w, http.StatusBadGateway, utils.Body{
-			"error": "failed to reach Arroyo API: " + err.Error(),
-		})
-	}
-	defer resp.Body.Close()
-
-	var wrapper struct {
-		Data []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-
-	if err = json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
-			"error": "failed to read Arroyo response: " + err.Error(),
+			"error": err.Error(),
 		})
-		return
 	}
 
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
-		"data": wrapper.Data,
+		"data": pipelines,
 	})
 }
 

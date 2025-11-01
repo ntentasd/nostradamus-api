@@ -29,6 +29,15 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 	defer client.Close()
 
+	pipelines, err := w.client.ListPipelinesInternal()
+	if err != nil {
+		fmt.Printf("[Watcher] failed to list existing pipelines - duplicates expected")
+	} else {
+		for _, pipeline := range pipelines {
+			w.knownTopics[pipeline.Name] = true
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -40,7 +49,6 @@ func (w *Watcher) Run(ctx context.Context) {
 				time.Sleep(10 * time.Second)
 				continue
 			}
-			log.Printf("[Watcher] polling Kafka: %d topics found", len(topics))
 			for _, topic := range topics {
 				if strings.HasPrefix(topic, "__") || !isKafkaManagedTopic(topic) {
 					continue
@@ -166,7 +174,7 @@ SELECT * FROM "%s";
 		if strings.Contains(err.Error(), "already exists") {
 			log.Printf("[Watcher] pipeline %s already exists, skipping", topic)
 		} else {
-			return fmt.Errorf("[Watcher] pipeline creation failed for %s: %v", topic, err)
+			return fmt.Errorf("pipeline creation failed for %s: %v", topic, err)
 		}
 	}
 
