@@ -19,6 +19,7 @@ func NewMux(app *App) http.Handler {
 
 	// get 5 latest values
 	mux.HandleFunc("/latest", app.latestHandler)
+	mux.HandleFunc("/aggregate", app.aggregateHandler)
 
 	// get fields & sensors
 	mux.HandleFunc("/fields", func(w http.ResponseWriter, r *http.Request) {

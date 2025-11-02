@@ -1,14 +1,10 @@
-// Package cache
 package cache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
-	"net"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ntentasd/nostradamus-api/pkg/types"
@@ -53,14 +49,14 @@ func (db *DB) Store(prefix string, entry types.Entry) error {
 	return nil
 }
 
-func (db *DB) FetchLast(prefix string, last int) ([]types.Entry, error) {
+func (db *DB) FetchLast(prefix string, n int) ([]types.Entry, error) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
 		time.Millisecond*100,
 	)
 	defer cancel()
 
-	entries, err := db.client.ZRevRangeWithScores(ctx, prefix, 0, int64(last-1)).
+	entries, err := db.client.ZRevRangeWithScores(ctx, prefix, 0, int64(n-1)).
 		Result()
 	if err != nil {
 		return nil, err
@@ -90,34 +86,38 @@ func (db *DB) FetchLast(prefix string, last int) ([]types.Entry, error) {
 	return ret, nil
 }
 
-func (db *DB) FetchLast5(prefix string) ([]types.Entry, error) {
-	entries, err := db.FetchLast(prefix, 5)
+func (db *DB) StoreAggregate(key string, data any, ttl time.Duration) error {
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		time.Millisecond*200,
+	)
+	defer cancel()
+
+	b, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal aggregate: %w", err)
+	}
+
+	if err := db.client.Set(ctx, key, b, ttl).Err(); err != nil {
+		return fmt.Errorf("failed to store aggregate: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) FetchAggregate(key string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		time.Millisecond*200,
+	)
+	defer cancel()
+
+	val, err := db.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("cache miss")
+	}
 	if err != nil {
 		return nil, err
 	}
-
-	return entries, nil
-}
-
-func resolveValkeyAddrs() []string {
-	if nodes := os.Getenv("VALKEY_NODES"); nodes != "" {
-		return strings.Split(nodes, ",")
-	}
-
-	if svc := os.Getenv("VALKEY_SERVICE"); svc != "" {
-		addrs, err := net.LookupHost(svc)
-		if err != nil {
-			log.Fatalf("failed to resolve %s: %v", svc, err)
-		}
-		var out []string
-		for _, ip := range addrs {
-			out = append(out, fmt.Sprintf("%s:6379", ip))
-		}
-		return out
-	}
-
-	log.Fatal(
-		"no Valkey discovery env provided (VALKEY_NODES or VALKEY_SERVICE)",
-	)
-	return nil
+	return val, nil
 }
