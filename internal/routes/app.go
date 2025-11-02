@@ -9,12 +9,12 @@ import (
 
 type App struct {
 	Store *db.DB
-	Cache *cache.DB
+	Cache cache.Cache
 	*arroyo.ArroyoClient
 	*emqx.EmqxClient
 }
 
-func New(store *db.DB, cache *cache.DB, ac *arroyo.ArroyoClient, ec *emqx.EmqxClient) *App {
+func New(store *db.DB, cache cache.Cache, ac *arroyo.ArroyoClient, ec *emqx.EmqxClient) *App {
 	return &App{
 		store,
 		cache,

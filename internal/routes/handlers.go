@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
 	"github.com/ntentasd/nostradamus-api/internal/db"
+	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 )
 
@@ -23,14 +25,14 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 	year, month, day := time.Now().Date()
 	today := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	res, err := app.Cache.FetchLast5(
+	res, err := app.Cache.FetchLast(
 		fmt.Sprintf(
 			"%s:%s:%s",
 			"sensor",
 			"550e8400-e29b-41d4-a716-446655440000",
 			today.Format("2006-01-02"),
 		),
-	)
+		5)
 	if err != nil {
 		utils.ReplyJSON(
 			w,
@@ -74,6 +76,80 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": res,
+	})
+}
+
+func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
+	sensorID := r.URL.Query().Get("sensor_id")
+	sensorType := r.URL.Query().Get("sensor_type")
+	windowStr := r.URL.Query().Get("window")
+	if sensorID == "" || sensorType == "" || windowStr == "" {
+		utils.ReplyBadRequest(w, "missing query params")
+		return
+	}
+
+	sType, err := strconv.Atoi(sensorType)
+	if err != nil || sType < 0 || sType > 2 {
+		utils.ReplyBadRequest(w, "invalid sensor type")
+		return
+	}
+
+	dur, err := time.ParseDuration(windowStr)
+	if err != nil {
+		utils.ReplyBadRequest(w, "invalid window")
+		return
+	}
+
+	now := time.Now().UTC()
+	today := now.Format("2006-01-02")
+	cacheKey := fmt.Sprintf("agg:%s:%s:%s", sensorID, today, windowStr)
+
+	cached, err := app.Cache.FetchAggregate(cacheKey)
+	if err == nil && cached != nil {
+		var agg types.Aggregate
+		if err := json.Unmarshal(cached, &agg); err == nil {
+			utils.ReplyJSON(w, http.StatusOK, utils.Body{
+				"data": agg,
+			})
+			return
+		}
+	}
+
+	readings, err := app.Store.GetReadings(sensorID, sType, now.Add(-dur), now)
+	if err != nil {
+		utils.ReplyInternalServerError(w, err.Error())
+		return
+	}
+
+	if len(readings) == 0 {
+		utils.ReplyNotFound(w, "no readings found")
+		return
+	}
+
+	sum, min, max := 0.0, readings[0], readings[0]
+	for _, v := range readings {
+		sum += v
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+
+	agg := types.Aggregate{
+		Avg:       sum / float64(len(readings)),
+		Min:       min,
+		Max:       max,
+		Count:     len(readings),
+		Timestamp: now,
+	}
+
+	aggBytes, _ := json.Marshal(agg)
+	_ = app.Cache.StoreAggregate(cacheKey, aggBytes, time.Minute*5)
+
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
+		"data": agg,
 	})
 }
 
