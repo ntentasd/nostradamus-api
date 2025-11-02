@@ -70,3 +70,11 @@ type Pipeline struct {
 	Query       string `json:"query,omitempty"`
 	Parallelism *int   `json:"parallelism,omitempty"`
 }
+
+type Aggregate struct {
+	Avg       float64   `json:"avg"`
+	Min       float64   `json:"min"`
+	Max       float64   `json:"max"`
+	Count     int       `json:"count"`
+	Timestamp time.Time `json:"timestamp"`
+}

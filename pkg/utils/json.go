@@ -19,3 +19,21 @@ func ReplyMethodNotAllowed(w http.ResponseWriter) error {
 		"error": "Method Not Allowed",
 	})
 }
+
+func ReplyBadRequest(w http.ResponseWriter, err string) error {
+	return ReplyJSON(w, http.StatusBadRequest, Body{
+		"error": err,
+	})
+}
+
+func ReplyInternalServerError(w http.ResponseWriter, err string) error {
+	return ReplyJSON(w, http.StatusInternalServerError, Body{
+		"error": err,
+	})
+}
+
+func ReplyNotFound(w http.ResponseWriter, err string) error {
+	return ReplyJSON(w, http.StatusNotFound, Body{
+		"error": err,
+	})
+}
