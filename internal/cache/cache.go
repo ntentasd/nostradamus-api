@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/redis/go-redis/v9"
 )
@@ -98,9 +99,11 @@ func (db *DB) StoreAggregate(key string, data any, ttl time.Duration) error {
 		return fmt.Errorf("failed to marshal aggregate: %w", err)
 	}
 
+	start := time.Now()
 	if err := db.client.Set(ctx, key, b, ttl).Err(); err != nil {
 		return fmt.Errorf("failed to store aggregate: %w", err)
 	}
+	metrics.CacheWriteLatencySeconds.Observe(time.Since(start).Seconds())
 
 	return nil
 }
@@ -112,12 +115,16 @@ func (db *DB) FetchAggregate(key string) ([]byte, error) {
 	)
 	defer cancel()
 
+	start := time.Now()
 	val, err := db.client.Get(ctx, key).Bytes()
 	if err == redis.Nil {
+		metrics.CacheMissesTotal.Inc()
 		return nil, fmt.Errorf("cache miss")
 	}
 	if err != nil {
 		return nil, err
 	}
+	metrics.CacheHitsTotal.Inc()
+	metrics.CacheReadLatencySeconds.Observe(time.Since(start).Seconds())
 	return val, nil
 }
