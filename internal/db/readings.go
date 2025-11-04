@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 )
 
@@ -47,6 +48,7 @@ WHERE sensor_id = ? AND bucket_date = ? AND timestamp >= ? AND timestamp <= ?
 ORDER BY timestamp DESC
 `, sensorType)
 
+		start := time.Now()
 		iter := db.Data.Query(query, sid, bucket, from, to).WithContext(ctx).Iter()
 
 		var v float64
@@ -57,6 +59,8 @@ ORDER BY timestamp DESC
 		if err := iter.Close(); err != nil {
 			return nil, fmt.Errorf("failed to query bucket %s: %w", bucket, err)
 		}
+
+		metrics.DbReadLatencySeconds.WithLabelValues("readings").Observe(time.Since(start).Seconds())
 	}
 
 	return readings, nil

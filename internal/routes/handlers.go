@@ -12,6 +12,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
 	"github.com/ntentasd/nostradamus-api/internal/db"
+	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
 )
@@ -80,6 +81,12 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	defer func() {
+		metrics.HttpRequestLatencySeconds.WithLabelValues("GET").Observe(time.Since(start).Seconds())
+	}()
+
 	sensorID := r.URL.Query().Get("sensor_id")
 	sensorType := r.URL.Query().Get("sensor_type")
 	windowStr := r.URL.Query().Get("window")
@@ -107,7 +114,7 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 	cached, err := app.Cache.FetchAggregate(cacheKey)
 	if err == nil && cached != nil {
 		var agg types.Aggregate
-		if err := json.Unmarshal(cached, &agg); err == nil {
+		if err = json.Unmarshal(cached, &agg); err == nil {
 			utils.ReplyJSON(w, http.StatusOK, utils.Body{
 				"data": agg,
 			})
