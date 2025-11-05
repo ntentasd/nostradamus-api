@@ -15,6 +15,9 @@ import (
 	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +84,9 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, span := otel.Tracer("nostradamus-api").Start(r.Context(), "HTTP /aggregate")
+	defer span.End()
+
 	start := time.Now()
 
 	defer func() {
@@ -111,18 +117,22 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 	today := now.Format("2006-01-02")
 	cacheKey := fmt.Sprintf("agg:%s:%s:%s", sensorID, today, windowStr)
 
-	cached, err := app.Cache.FetchAggregate(cacheKey)
+	cached, err := app.Cache.FetchAggregate(ctx, cacheKey)
 	if err == nil && cached != nil {
 		var agg types.Aggregate
 		if err = json.Unmarshal(cached, &agg); err == nil {
 			utils.ReplyJSON(w, http.StatusOK, utils.Body{
 				"data": agg,
 			})
+			span.SetStatus(codes.Ok, "")
 			return
 		}
+
+		span.SetAttributes(attribute.String("cache.result", "corrupt"))
+		span.RecordError(err)
 	}
 
-	readings, err := app.Store.GetReadings(sensorID, sType, now.Add(-dur), now)
+	readings, err := app.Store.GetReadings(ctx, sensorID, sType, now.Add(-dur), now)
 	if err != nil {
 		utils.ReplyInternalServerError(w, err.Error())
 		return
@@ -152,12 +162,13 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp: now,
 	}
 
-	aggBytes, _ := json.Marshal(agg)
-	_ = app.Cache.StoreAggregate(cacheKey, aggBytes, time.Minute*5)
+	// aggBytes, _ := json.Marshal(agg)
+	_ = app.Cache.StoreAggregate(ctx, cacheKey, agg, time.Minute*5)
 
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": agg,
 	})
+	span.SetStatus(codes.Ok, "")
 }
 
 func (app *App) fieldsHandler(w http.ResponseWriter, r *http.Request) {

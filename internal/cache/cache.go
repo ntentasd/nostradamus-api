@@ -10,6 +10,9 @@ import (
 	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type DB struct {
@@ -87,44 +90,66 @@ func (db *DB) FetchLast(prefix string, n int) ([]types.Entry, error) {
 	return ret, nil
 }
 
-func (db *DB) StoreAggregate(key string, data any, ttl time.Duration) error {
+func (db *DB) StoreAggregate(ctx context.Context, key string, data any, ttl time.Duration) error {
+	ctx, span := otel.Tracer("nostradamus-cache").Start(ctx, "cache.StoreAggregate")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("cache.key", key))
+
 	ctx, cancel := context.WithTimeout(
-		context.Background(),
+		ctx,
 		time.Millisecond*200,
 	)
 	defer cancel()
 
 	b, err := json.Marshal(data)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("failed to marshal aggregate: %w", err)
 	}
 
 	start := time.Now()
 	if err := db.client.Set(ctx, key, b, ttl).Err(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("failed to store aggregate: %w", err)
 	}
 	metrics.CacheWriteLatencySeconds.Observe(time.Since(start).Seconds())
+	span.SetStatus(codes.Ok, "")
 
 	return nil
 }
 
-func (db *DB) FetchAggregate(key string) ([]byte, error) {
+func (db *DB) FetchAggregate(ctx context.Context, key string) ([]byte, error) {
+	ctx, span := otel.Tracer("nostradamus-cache").Start(ctx, "cache.FetchAggregate")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("cache.key", key))
+
 	ctx, cancel := context.WithTimeout(
-		context.Background(),
+		ctx,
 		time.Millisecond*200,
 	)
 	defer cancel()
 
 	start := time.Now()
 	val, err := db.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
+	switch {
+	case err == redis.Nil:
 		metrics.CacheMissesTotal.Inc()
+		span.SetAttributes(attribute.String("cache.result", "miss"))
+		span.SetStatus(codes.Ok, "")
 		return nil, fmt.Errorf("cache miss")
+	case err != nil:
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("cache fetch: %w", err)
+	default:
+		metrics.CacheHitsTotal.Inc()
+		metrics.CacheReadLatencySeconds.Observe(time.Since(start).Seconds())
+		span.SetAttributes(attribute.String("cache.result", "hit"))
+		span.SetStatus(codes.Ok, "")
+		return val, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	metrics.CacheHitsTotal.Inc()
-	metrics.CacheReadLatencySeconds.Observe(time.Since(start).Seconds())
-	return val, nil
 }

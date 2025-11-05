@@ -15,6 +15,7 @@ import (
 	"github.com/ntentasd/nostradamus-api/internal/emqx"
 	"github.com/ntentasd/nostradamus-api/internal/kafka"
 	routes "github.com/ntentasd/nostradamus-api/internal/routes"
+	"github.com/ntentasd/nostradamus-api/internal/tracing"
 	"github.com/ntentasd/nostradamus-api/internal/worker"
 )
 
@@ -90,6 +91,9 @@ func main() {
 		ArroyoClient: ac,
 		EmqxClient:   emqxClient,
 	}
+
+	shutdown := tracing.InitTracer()
+	defer shutdown(context.Background())
 
 	mux := routes.NewMux(&app)
 

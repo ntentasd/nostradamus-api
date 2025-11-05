@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"time"
 
 	"github.com/ntentasd/nostradamus-api/pkg/types"
@@ -16,10 +17,10 @@ type Cache interface {
 	FetchLast(prefix string, n int) ([]types.Entry, error)
 
 	// StoreAggregate caches a computed aggregate with a TTL
-	StoreAggregate(key string, data any, ttl time.Duration) error
+	StoreAggregate(ctx context.Context, key string, data any, ttl time.Duration) error
 
 	// FetchAggregate retrieves an aggregate from cache
-	FetchAggregate(key string) ([]byte, error)
+	FetchAggregate(ctx context.Context, key string) ([]byte, error)
 
 	// Close gracefully closes any connections
 	Close()
