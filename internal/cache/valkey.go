@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
@@ -15,29 +14,28 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-type DB struct {
-	client *redis.ClusterClient
+var _ Cache = (*Valkey)(nil)
+
+type Valkey struct {
+	client  *redis.ClusterClient
+	metrics *CacheMetrics
 }
 
-func New() *DB {
-	addrs := resolveValkeyAddrs()
+func NewValkey(addrs []string) *Valkey {
 	opts := &redis.ClusterOptions{Addrs: addrs}
 	client := redis.NewClusterClient(opts)
-	return &DB{client}
+	cm := NewCacheMetrics("valkey")
+	return &Valkey{client, cm}
 }
 
-func (db *DB) Close() {
-	db.client.Close()
-}
-
-func (db *DB) Store(prefix string, entry types.Entry) error {
+func (v *Valkey) Store(prefix string, entry types.Entry) error {
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
 		time.Millisecond*200,
 	)
 	defer cancel()
 
-	_, err := db.client.ZAdd(ctx, prefix, redis.Z{
+	_, err := v.client.ZAdd(ctx, prefix, redis.Z{
 		Score:  float64(entry.Timestamp.UnixMilli()),
 		Member: entry.Value,
 	}).Result()
@@ -45,7 +43,7 @@ func (db *DB) Store(prefix string, entry types.Entry) error {
 		return err
 	}
 
-	_, err = db.client.Expire(ctx, prefix, time.Hour).Result()
+	_, err = v.client.Expire(ctx, prefix, time.Hour).Result()
 	if err != nil {
 		return err
 	}
@@ -53,14 +51,14 @@ func (db *DB) Store(prefix string, entry types.Entry) error {
 	return nil
 }
 
-func (db *DB) FetchLast(prefix string, n int) ([]types.Entry, error) {
+func (v *Valkey) FetchLast(prefix string, n int) ([]types.Entry, error) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
 		time.Millisecond*100,
 	)
 	defer cancel()
 
-	entries, err := db.client.ZRevRangeWithScores(ctx, prefix, 0, int64(n-1)).
+	entries, err := v.client.ZRevRangeWithScores(ctx, prefix, 0, int64(n-1)).
 		Result()
 	if err != nil {
 		return nil, err
@@ -90,15 +88,19 @@ func (db *DB) FetchLast(prefix string, n int) ([]types.Entry, error) {
 	return ret, nil
 }
 
-func (db *DB) StoreAggregate(ctx context.Context, key string, data any, ttl time.Duration) error {
+func (v *Valkey) StoreAggregate(ctx context.Context, key string, data any, ttl time.Duration) error {
 	ctx, span := otel.Tracer("nostradamus-cache").Start(ctx, "cache.StoreAggregate")
 	defer span.End()
 
-	span.SetAttributes(attribute.String("cache.key", key))
+	span.SetAttributes(
+		attribute.String("cache.driver", "valkey"),
+		attribute.String("cache.key", key),
+		attribute.Int64("cache.ttl", int64(ttl.Seconds())),
+	)
 
 	ctx, cancel := context.WithTimeout(
 		ctx,
-		time.Millisecond*200,
+		time.Millisecond*100,
 	)
 	defer cancel()
 
@@ -110,34 +112,37 @@ func (db *DB) StoreAggregate(ctx context.Context, key string, data any, ttl time
 	}
 
 	start := time.Now()
-	if err := db.client.Set(ctx, key, b, ttl).Err(); err != nil {
+	if err := v.client.Set(ctx, key, b, ttl).Err(); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("failed to store aggregate: %w", err)
 	}
-	metrics.CacheWriteLatencySeconds.Observe(time.Since(start).Seconds())
+	v.metrics.RecordWrite(start)
 	span.SetStatus(codes.Ok, "")
 
 	return nil
 }
 
-func (db *DB) FetchAggregate(ctx context.Context, key string) ([]byte, error) {
+func (v *Valkey) FetchAggregate(ctx context.Context, key string) ([]byte, error) {
 	ctx, span := otel.Tracer("nostradamus-cache").Start(ctx, "cache.FetchAggregate")
 	defer span.End()
 
-	span.SetAttributes(attribute.String("cache.key", key))
+	span.SetAttributes(
+		attribute.String("cache.driver", "valkey"),
+		attribute.String("cache.key", key),
+	)
 
 	ctx, cancel := context.WithTimeout(
 		ctx,
-		time.Millisecond*200,
+		time.Millisecond*100,
 	)
 	defer cancel()
 
 	start := time.Now()
-	val, err := db.client.Get(ctx, key).Bytes()
+	val, err := v.client.Get(ctx, key).Bytes()
 	switch {
 	case err == redis.Nil:
-		metrics.CacheMissesTotal.Inc()
+		v.metrics.RecordMiss()
 		span.SetAttributes(attribute.String("cache.result", "miss"))
 		span.SetStatus(codes.Ok, "")
 		return nil, fmt.Errorf("cache miss")
@@ -146,10 +151,13 @@ func (db *DB) FetchAggregate(ctx context.Context, key string) ([]byte, error) {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("cache fetch: %w", err)
 	default:
-		metrics.CacheHitsTotal.Inc()
-		metrics.CacheReadLatencySeconds.Observe(time.Since(start).Seconds())
+		v.metrics.RecordHit(start)
 		span.SetAttributes(attribute.String("cache.result", "hit"))
 		span.SetStatus(codes.Ok, "")
 		return val, nil
 	}
+}
+
+func (v *Valkey) Close() {
+	v.client.Close()
 }

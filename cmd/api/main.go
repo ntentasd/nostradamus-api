@@ -56,8 +56,31 @@ func main() {
 	store := db.New(metaSess, dataSess)
 	defer store.Close()
 
-	cache := cache.New()
-	defer cache.Close()
+	var valkeyAddrs []string
+	if nodes := os.Getenv("VALKEY_NODES"); nodes != "" {
+		valkeyAddrs = strings.Split(nodes, ",")
+	}
+
+	var memcachedAddr string
+	if node := os.Getenv("MEMCACHED_NODE"); node != "" {
+		memcachedAddr = node
+	}
+
+	if len(valkeyAddrs) == 0 && memcachedAddr == "" {
+		log.Fatal("either VALKEY_NODES or MEMCACHED_NODE must be set")
+	}
+
+	if len(valkeyAddrs) > 0 && memcachedAddr != "" {
+		log.Fatal("both VALKEY_NODES and MEMCACHED_NODE are set — only one is allowed")
+	}
+
+	var c cache.Cache
+	if len(valkeyAddrs) > 0 {
+		c = cache.NewValkey(valkeyAddrs)
+	} else {
+		c = cache.NewMemcached(memcachedAddr)
+	}
+	defer c.Close()
 
 	ac := arroyo.New(arroyoURL)
 
@@ -87,7 +110,7 @@ func main() {
 
 	app := routes.App{
 		Store:        store,
-		Cache:        cache,
+		Cache:        c,
 		ArroyoClient: ac,
 		EmqxClient:   emqxClient,
 	}

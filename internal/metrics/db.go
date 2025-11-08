@@ -1,34 +1,19 @@
 package metrics
 
 import (
-	"os"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const (
-	ScyllaDb = "scylladb"
-)
-
-func dbDriver() string {
-	if os.Getenv("SCYLLA_NODES") != "" {
-		return ScyllaDb
-	}
-
-	return "none"
-}
-
 var (
+	dbBuckets = []float64{0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025}
+
 	DbReadLatencySeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:      "db_read_latency_seconds",
 			Namespace: NostradamusNamespace,
-			ConstLabels: prometheus.Labels{
-				"db": dbDriver(),
-			},
-			Buckets: prometheus.DefBuckets,
-			Help:    "The latency of db read operations in seconds.",
+			Buckets:   dbBuckets,
+			Help:      "The latency of db read operations in seconds.",
 		},
 		[]string{"query"},
 	)

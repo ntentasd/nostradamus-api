@@ -64,7 +64,7 @@ func (app *App) latestHandler(w http.ResponseWriter, r *http.Request) {
 			)
 			return
 		}
-		// Create pipelined function
+		// TODO: Create pipelined function
 		for _, entry := range res {
 			app.Cache.Store(
 				fmt.Sprintf(
@@ -162,7 +162,6 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp: now,
 	}
 
-	// aggBytes, _ := json.Marshal(agg)
 	_ = app.Cache.StoreAggregate(ctx, cacheKey, agg, time.Minute*5)
 
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{

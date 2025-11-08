@@ -6,6 +6,7 @@ replace github.com/gocql/gocql => github.com/scylladb/gocql v1.15.3
 
 require (
 	github.com/IBM/sarama v1.46.2
+	github.com/bradfitz/gomemcache v0.0.0-20250403215159-8d39553ac7cf
 	github.com/gocql/gocql v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.23.2

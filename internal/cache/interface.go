@@ -25,5 +25,3 @@ type Cache interface {
 	// Close gracefully closes any connections
 	Close()
 }
-
-var _ Cache = (*DB)(nil)
