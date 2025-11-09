@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"time"
 
@@ -95,7 +94,7 @@ WHERE field_id = ?
 			var err error
 			sType, err = types.ToSensorType(sensorType)
 			if err != nil {
-				log.Printf("[WARN] skipping sensor %s: invalid type '%s': %v\n", sensorName, sensorType, err)
+				db.logger.Warn().Err(err).Str("sensor_name", sensorName).Str("sensor_type", sensorType).Msg("invalid sensor type")
 				continue
 			}
 		}

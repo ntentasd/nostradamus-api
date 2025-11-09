@@ -17,6 +17,7 @@ func (ac *ArroyoClient) ListJobs(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := ac.Get("/api/v1/jobs")
 	if err != nil {
+		ac.logger.Error().Err(err).Msg("failed to reach Arroyo API")
 		utils.ReplyJSON(w, http.StatusBadGateway, utils.Body{
 			"error": "failed to reach Arroyo API: " + err.Error(),
 		})
@@ -25,6 +26,7 @@ func (ac *ArroyoClient) ListJobs(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		ac.logger.Warn().Err(err).Str("status", resp.Status).Int("status_code", resp.StatusCode).Msg("unexpected status from Arroyo API")
 		utils.ReplyJSON(w, resp.StatusCode, utils.Body{
 			"error": fmt.Sprintf("Arroyo API returned %d", resp.StatusCode),
 		})
@@ -40,6 +42,7 @@ func (ac *ArroyoClient) ListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&jobWrapper); err != nil {
+		ac.logger.Error().Err(err).Msg("failed to decode Arroyo response")
 		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
 			"error": "failed to decode Arroyo response: " + err.Error(),
 		})
@@ -77,6 +80,7 @@ func (ac *ArroyoClient) GetJob(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := ac.Get(fmt.Sprintf("/api/v1/pipelines/%s/jobs", id))
 	if err != nil {
+		ac.logger.Error().Err(err).Msg("failed to list jobs")
 		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
 			"error": err.Error(),
 		})
@@ -85,6 +89,7 @@ func (ac *ArroyoClient) GetJob(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		ac.logger.Warn().Err(err).Msg("unexpected status from Arroyo API")
 		utils.ReplyJSON(w, resp.StatusCode, utils.Body{
 			"error": fmt.Sprintf("Arroyo API returned %d", resp.StatusCode),
 		})
@@ -102,6 +107,7 @@ func (ac *ArroyoClient) GetJob(w http.ResponseWriter, r *http.Request) {
 
 	err = json.NewDecoder(resp.Body).Decode(&pipelineWrapper)
 	if err != nil {
+		ac.logger.Error().Err(err).Msg("failed to decode Arroyo response")
 		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
 			"error": "failed to decode Arroyo response: " + err.Error(),
 		})

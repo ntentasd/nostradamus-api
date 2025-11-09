@@ -3,20 +3,30 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/ntentasd/nostradamus-api/internal/arroyo"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
-func NewWatcher(brokers []string, client *arroyo.ArroyoClient, profiles arroyo.ProfileCache) *Watcher {
+type Watcher struct {
+	brokers     []string
+	client      *arroyo.ArroyoClient
+	knownTopics map[string]bool
+	profiles    arroyo.ProfileCache
+	logger      zerolog.Logger
+}
+
+func NewWatcher(brokers []string, client *arroyo.ArroyoClient, profiles arroyo.ProfileCache, logger zerolog.Logger) *Watcher {
 	return &Watcher{
 		brokers:     brokers,
 		client:      client,
 		knownTopics: make(map[string]bool),
 		profiles:    profiles,
+		logger:      logger,
 	}
 }
 
@@ -25,13 +35,13 @@ func (w *Watcher) Run(ctx context.Context) {
 	cfg.Version = sarama.V2_8_0_0
 	client, err := sarama.NewClient(w.brokers, cfg)
 	if err != nil {
-		log.Fatalf("[Watcher] Kafka client: %v", err)
+		w.logger.Fatal().Err(err).Msg("Kafka client error")
 	}
 	defer client.Close()
 
 	pipelines, err := w.client.ListPipelinesInternal()
 	if err != nil {
-		fmt.Printf("[Watcher] failed to list existing pipelines - duplicates expected")
+		w.logger.Error().Err(err).Msg("failed to list existing pipelines - duplicates expected")
 	} else {
 		for _, pipeline := range pipelines {
 			w.knownTopics[pipeline.Name] = true
@@ -45,7 +55,7 @@ func (w *Watcher) Run(ctx context.Context) {
 		default:
 			topics, err := client.Topics()
 			if err != nil {
-				log.Printf("[Watcher] list topics: %v", err)
+				w.logger.Error().Err(err).Msg("failed to list topics")
 				time.Sleep(10 * time.Second)
 				continue
 			}
@@ -57,16 +67,16 @@ func (w *Watcher) Run(ctx context.Context) {
 					continue
 				}
 
-				log.Printf("[Watcher] new topic detected: %s", topic)
+				log.Info().Str("topic", topic).Msg("new topic detected")
 				if err := w.createArroyoFlow(topic); err != nil {
-					log.Printf("[Watcher] failed to create flow for %s: %v", topic, err)
+					w.logger.Warn().Str("topic", topic).Msg("failed to create flow")
 					continue
 				}
 				w.knownTopics[topic] = true
 			}
 			time.Sleep(30 * time.Second)
 			if err := client.RefreshMetadata(); err != nil {
-				log.Printf("[Watcher] metadata refresh failed: %v", err)
+				w.logger.Warn().Err(err).Msg("failed to refresh metadata")
 			}
 		}
 	}
@@ -105,12 +115,13 @@ func (w *Watcher) createArroyoFlow(topic string) error {
 
 	if _, err := w.client.CreateConnectionTable(kafkaReq); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			log.Printf("[Watcher] Kafka table %s already exists, skipping", kafkaName)
+			w.logger.Info().Str("connection_table", kafkaName).Msg("Kafka connection table already exists, skipping")
 		} else {
-			return fmt.Errorf("[Watcher] failed to create Kafka table %s: %w", kafkaName, err)
+			w.logger.Error().Err(err).Str("connection_table", kafkaName).Msg("failed to create Kafka table")
+			return fmt.Errorf("failed to create Kafka table: %w", err)
 		}
 	} else {
-		log.Printf("[Watcher] Kafka connection table created: %s", kafkaName)
+		log.Info().Str("connection_table", kafkaName).Msg("Kafka connection table created")
 	}
 
 	// TODO: create one scylla connection at start
@@ -172,12 +183,13 @@ SELECT * FROM "%s";
 
 	if _, err := w.client.CreatePipelineInternal(topic, query, 1); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			log.Printf("[Watcher] pipeline %s already exists, skipping", topic)
+			w.logger.Info().Str("topic", topic).Msg("pipeline already exists, skipping")
 		} else {
+			w.logger.Error().Err(err).Str("topic", topic).Msg("failed to create pipeline")
 			return fmt.Errorf("pipeline creation failed for %s: %v", topic, err)
 		}
 	}
 
-	log.Printf("[Watcher] created pipeline for %s", topic)
+	w.logger.Info().Str("topic", topic).Msg("pipeline created")
 	return nil
 }

@@ -62,6 +62,7 @@ func (ac *ArroyoClient) CreatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		ac.logger.Warn().Err(err).Msg("invalid request parameters")
 		utils.ReplyJSON(w, http.StatusBadRequest, utils.Body{
 			"error": err.Error(),
 		})
@@ -87,6 +88,7 @@ FROM
 
 	resp, err := ac.Post("/api/v1/pipelines", req)
 	if err != nil {
+		ac.logger.Error().Err(err).Msg("failed to reach Arroyo API")
 		utils.ReplyJSON(w, http.StatusBadGateway, utils.Body{
 			"error": "failed to reach Arroyo API: " + err.Error(),
 		})
@@ -99,8 +101,9 @@ FROM
 	}
 
 	if err = json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+		ac.logger.Error().Err(err).Msg("failed to decode Arroyo response")
 		utils.ReplyJSON(w, http.StatusInternalServerError, utils.Body{
-			"error": "failed to read Arroyo response: " + err.Error(),
+			"error": "failed to decode Arroyo response: " + err.Error(),
 		})
 		return
 	}

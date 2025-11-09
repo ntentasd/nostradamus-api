@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
-	"log"
+	"io"
+	stdlog "log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+
 	"github.com/ntentasd/nostradamus-api/internal/arroyo"
 	"github.com/ntentasd/nostradamus-api/internal/cache"
 	"github.com/ntentasd/nostradamus-api/internal/db"
@@ -25,6 +29,9 @@ var (
 )
 
 func main() {
+	stdlog.SetOutput(io.Discard)
+	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+
 	scyllaEnv := os.Getenv("SCYLLA_NODES")
 	arroyoURL := os.Getenv("ARROYO_URL")
 	kafkaEnv := os.Getenv("KAFKA_BROKERS")
@@ -37,23 +44,24 @@ func main() {
 		kafkaBrokers = strings.Split(kafkaEnv, ",")
 	}
 
-	log.Printf("Scylla nodes parsed: %+v", scyllaNodes)
+	log.Info().Strs("scylla_nodes", scyllaNodes).Msg("parsed Scylla nodes")
 
 	clusterMeta := gocql.NewCluster(scyllaNodes...)
 	clusterMeta.Keyspace = "sensors_meta"
 	metaSess, err := clusterMeta.CreateSession()
 	if err != nil {
-		log.Fatalf("unable to connect: %v", err)
+		log.Fatal().Err(err).Msg("unable to connect to meta keyspace")
 	}
 
 	clusterData := gocql.NewCluster(scyllaNodes...)
 	clusterData.Keyspace = "sensors_data"
 	dataSess, err := clusterData.CreateSession()
 	if err != nil {
-		log.Fatalf("unable to connect: %v", err)
+		log.Fatal().Err(err).Msg("unable to connect to data keyspace")
 	}
 
-	store := db.New(metaSess, dataSess)
+	dbLogger := log.Logger.With().Str("component", "db").Logger()
+	store := db.New(metaSess, dataSess, dbLogger)
 	defer store.Close()
 
 	var valkeyAddrs []string
@@ -67,26 +75,29 @@ func main() {
 	}
 
 	if len(valkeyAddrs) == 0 && memcachedAddr == "" {
-		log.Fatal("either VALKEY_NODES or MEMCACHED_NODE must be set")
+		log.Fatal().Msg("VALKEY_NODES or MEMCACHED_NODE must be set")
 	}
 
 	if len(valkeyAddrs) > 0 && memcachedAddr != "" {
-		log.Fatal("both VALKEY_NODES and MEMCACHED_NODE are set — only one is allowed")
+		log.Fatal().Msg("only one of VALKEY_NODES or MEMCACHED_NODE may be set")
 	}
 
 	var c cache.Cache
 	if len(valkeyAddrs) > 0 {
 		c = cache.NewValkey(valkeyAddrs)
+		log.Info().Msg("using Valkey cache driver")
 	} else {
 		c = cache.NewMemcached(memcachedAddr)
+		log.Info().Msg("using Memcached cache driver")
 	}
 	defer c.Close()
 
-	ac := arroyo.New(arroyoURL)
+	arroyoLogger := log.Logger.With().Str("component", "arroyo_client").Logger()
+	ac := arroyo.New(arroyoURL, arroyoLogger)
 
 	profiles, err := ac.ListConnectionProfiles()
 	if err != nil {
-		log.Fatalf("failed to list Arroyo connection profiles: %v", err)
+		log.Fatal().Err(err).Msg("failed to list Arroyo connection profiles")
 	}
 
 	var pCache arroyo.ProfileCache
@@ -100,38 +111,35 @@ func main() {
 	}
 
 	if pCache.KafkaProfileID == "" || pCache.ScyllaProfileID == "" {
-		log.Fatalf("missing Kafka or Scylla profile in Arroyo")
+		log.Fatal().Msg("missing Kafka or Scylla profile")
 	}
 
-	log.Printf("[Arroyo] Kafka profile: %s | Scylla profile: %s",
-		pCache.KafkaProfileID, pCache.ScyllaProfileID)
+	log.Info().Str("kafka_profile", pCache.KafkaProfileID).Str("scylla_profile", pCache.ScyllaProfileID).Msg("loaded Arroyo profiles")
 
 	emqxClient := emqx.New()
 
-	app := routes.App{
-		Store:        store,
-		Cache:        c,
-		ArroyoClient: ac,
-		EmqxClient:   emqxClient,
-	}
+	appLogger := log.Logger.With().Str("component", "app").Logger()
+	app := routes.New(store, c, ac, emqxClient, appLogger)
 
 	shutdown := tracing.InitTracer()
 	defer shutdown(context.Background())
 
-	mux := routes.NewMux(&app)
+	mux := routes.NewMux(app)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	watcher := kafka.NewWatcher(kafkaBrokers, ac, pCache)
+	watcherLogger := log.Logger.With().Str("component", "kafka_watcher").Logger()
+	watcher := kafka.NewWatcher(kafkaBrokers, ac, pCache, watcherLogger)
 	go watcher.Run(ctx)
 
-	sv := worker.NewSupervisor(ac, time.Second*5)
+	supervisorLogger := log.Logger.With().Str("component", "supervisor").Logger()
+	sv := worker.NewSupervisor(ac, time.Second*5, supervisorLogger)
 	sv.Start(context.Background())
 	defer sv.Stop()
 
-	log.Println("Listening on port :8080...")
+	log.Info().Msg("Listening on port :8080")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("server shutdown")
 	}
 }

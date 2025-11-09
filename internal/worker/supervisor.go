@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/ntentasd/nostradamus-api/internal/arroyo"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
+	"github.com/rs/zerolog"
 )
 
 // Supervisor checks Arroyo pipelines periodically and restarts failed ones.
@@ -16,13 +16,15 @@ type Supervisor struct {
 	AC        *arroyo.ArroyoClient
 	Interval  time.Duration
 	cancelCtx context.CancelFunc
+	logger    zerolog.Logger
 }
 
 // NewSupervisor creates a new background worker for pipeline supervision.
-func NewSupervisor(ac *arroyo.ArroyoClient, interval time.Duration) *Supervisor {
+func NewSupervisor(ac *arroyo.ArroyoClient, interval time.Duration, logger zerolog.Logger) *Supervisor {
 	return &Supervisor{
 		AC:       ac,
 		Interval: interval,
+		logger:   logger,
 	}
 }
 
@@ -34,16 +36,16 @@ func (s *Supervisor) Start(ctx context.Context) {
 		ticker := time.NewTicker(s.Interval)
 		defer ticker.Stop()
 
-		log.Println("[Supervisor] started pipeline monitor")
+		s.logger.Info().Msg("pipeline monitoring started")
 
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("[Supervisor] stopped")
+				s.logger.Info().Msg("pipeline monitoring stopped")
 				return
 			case <-ticker.C:
 				if err := s.checkAndRestartPipelines(); err != nil {
-					log.Printf("[Supervisor] error: %v", err)
+					s.logger.Warn().Msg("failed to check and restart pipelines")
 				}
 			}
 		}
@@ -62,6 +64,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 	// list pipelines
 	resp, err := s.AC.Get("/api/v1/pipelines")
 	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to fetch pipelines")
 		return fmt.Errorf("failed to fetch pipelines: %w", err)
 	}
 	defer resp.Body.Close()
@@ -73,6 +76,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		s.logger.Error().Err(err).Msg("failed to decode pipelines")
 		return fmt.Errorf("failed to decode pipelines: %w", err)
 	}
 
@@ -80,7 +84,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 	for _, p := range payload.Data {
 		jobResp, err := s.AC.Get(fmt.Sprintf("/api/v1/pipelines/%s/jobs", p.ID))
 		if err != nil {
-			log.Printf("[Supervisor] failed to fetch jobs for pipeline %s: %v", p.ID, err)
+			s.logger.Warn().Err(err).Str("pipeline_id", p.ID).Msg("failed to fetch jobs")
 			continue
 		}
 
@@ -92,7 +96,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 			} `json:"data"`
 		}
 		if err := json.NewDecoder(jobResp.Body).Decode(&jobs); err != nil {
-			log.Printf("[Supervisor] decode error for %s: %v", p.ID, err)
+			s.logger.Warn().Err(err).Str("pipeline_id", p.ID).Msg("failed to decode pipeline")
 			jobResp.Body.Close()
 			continue
 		}
@@ -102,8 +106,7 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 		hasFailed := false
 		for _, j := range jobs.Data {
 			if j.State == types.StateTypeStopped || j.State == types.StateTypeFailed {
-				log.Printf("[Supervisor] pipeline %s (%s) has failed job %s - reason: %s",
-					p.Name, p.ID, j.ID, j.Failed)
+				s.logger.Error().Str("pipeline_name", p.Name).Str("pipeline_id", p.ID).Str("job_id", j.ID).Str("reason", j.Failed).Msg("pipeline failed a job")
 				hasFailed = true
 				break
 			}
@@ -111,11 +114,11 @@ func (s *Supervisor) checkAndRestartPipelines() error {
 
 		// restart pipeline if needed
 		if hasFailed {
-			log.Printf("[Supervisor] restarting pipeline %s...", p.ID)
+			s.logger.Info().Str("pipeline_id", p.ID).Msg("restarting pipeline")
 			if err := s.AC.RestartPipeline(p.ID); err != nil {
-				log.Printf("[Supervisor] restart failed for %s: %v", p.ID, err)
+				s.logger.Error().Err(err).Str("pipeline_id", p.ID).Msg("failed to restart pipeline")
 			} else {
-				log.Printf("[Supervisor] pipeline %s restarted successfully", p.ID)
+				s.logger.Info().Str("pipeline_id", p.ID).Msg("pipeline restarted successfully")
 			}
 		}
 	}

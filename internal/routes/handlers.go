@@ -4,20 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/ntentasd/nostradamus-api/internal/db"
 	"github.com/ntentasd/nostradamus-api/internal/metrics"
 	"github.com/ntentasd/nostradamus-api/pkg/types"
 	"github.com/ntentasd/nostradamus-api/pkg/utils"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -380,13 +380,9 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 	password := uuid.NewString()[:12]
 
 	if _, err = app.CreateUser(username, password, false); err != nil {
-		log.Printf(
-			"[WARN] Failed to create EMQX user for sensor %s: %v",
-			username,
-			err,
-		)
+		app.logger.Warn().Err(err).Str("sensor", username).Msg("failed to create EMQX user")
 	} else {
-		log.Printf("Created EMQX user %s for sensor %s", username, sensor.SensorName)
+		app.logger.Info().Str("username", username).Str("sensor_name", sensor.SensorName).Msg("EMQX user created successfully")
 	}
 
 	err = app.Store.StoreSensorCredentials(
@@ -396,11 +392,7 @@ func (app *App) registerSensorHandler(w http.ResponseWriter, r *http.Request) {
 		password,
 	)
 	if err != nil {
-		log.Printf(
-			"[WARN] failed to store MQTT credentials for sensor %s: %v",
-			sensor.SensorID,
-			err,
-		)
+		app.logger.Warn().Err(err).Str("sensor_id", sensor.SensorID.String()).Msg("failed to store MQTT credentials")
 	}
 
 	utils.ReplyJSON(w, http.StatusCreated, utils.Body{
