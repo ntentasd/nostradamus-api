@@ -96,19 +96,33 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 	sensorID := r.URL.Query().Get("sensor_id")
 	sensorType := r.URL.Query().Get("sensor_type")
 	windowStr := r.URL.Query().Get("window")
-	if sensorID == "" || sensorType == "" || windowStr == "" {
+
+	missing := []string{}
+	if sensorID == "" {
+		missing = append(missing, "sensor_id")
+	}
+	if sensorType == "" {
+		missing = append(missing, "sensor_type")
+	}
+	if windowStr == "" {
+		missing = append(missing, "window_str")
+	}
+	if len(missing) > 0 {
+		app.logger.Error().Strs("missing_params", missing).Msg("invalid request")
 		utils.ReplyBadRequest(w, "missing query params")
 		return
 	}
 
 	sType, err := strconv.Atoi(sensorType)
 	if err != nil || sType < 0 || sType > 2 {
+		app.logger.Error().Err(err).Int("sensor_type_num", sType).Msg("invalid sensor type")
 		utils.ReplyBadRequest(w, "invalid sensor type")
 		return
 	}
 
 	dur, err := time.ParseDuration(windowStr)
 	if err != nil {
+		app.logger.Error().Err(err).Str("duration", dur.String()).Msg("invalid window")
 		utils.ReplyBadRequest(w, "invalid window")
 		return
 	}
@@ -128,17 +142,20 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		app.logger.Warn().Err(err).Str("cache_key", cacheKey).Str("cache_value", string(cached)).Msg("invalid cache entry")
 		span.SetAttributes(attribute.String("cache.result", "corrupt"))
 		span.RecordError(err)
 	}
 
 	readings, err := app.Store.GetReadings(ctx, sensorID, sType, now.Add(-dur), now)
 	if err != nil {
+		app.logger.Error().Err(err).Msg("failed to get readings from database")
 		utils.ReplyInternalServerError(w, err.Error())
 		return
 	}
 
 	if len(readings) == 0 {
+		app.logger.Warn().Msg("no readings found")
 		utils.ReplyNotFound(w, "no readings found")
 		return
 	}
@@ -162,7 +179,11 @@ func (app *App) aggregateHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp: now,
 	}
 
-	_ = app.Cache.StoreAggregate(ctx, cacheKey, agg, time.Minute*5)
+	ttl := time.Minute * 5
+	err = app.Cache.StoreAggregate(ctx, cacheKey, agg, ttl)
+	if err != nil {
+		app.logger.Error().Err(err).Str("cache_key", cacheKey).Str("ttl", ttl.String()).Msg("failed to store aggregate in cache")
+	}
 
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"data": agg,
