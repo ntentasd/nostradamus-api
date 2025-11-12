@@ -50,7 +50,7 @@ func (db *DB) GetReadings(ctx context.Context, sensorID string, sType int, from,
 
 	// Calculate all days (buckets) between from and to
 	for date := start; !date.After(end); date = date.Add(24 * time.Hour) {
-		bucket := date
+		bucket := date.Format("2006-01-02")
 
 		query := fmt.Sprintf(`
 SELECT value
@@ -62,7 +62,7 @@ ORDER BY timestamp DESC
 		qctx, qspan := otel.Tracer("nostradamus-db").Start(ctx, "db.query")
 		qspan.SetAttributes(
 			attribute.String("table", sensorType),
-			attribute.String("bucket.date", bucket.String()),
+			attribute.String("bucket.date", bucket),
 			attribute.String("query", query),
 		)
 
