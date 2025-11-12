@@ -37,3 +37,9 @@ func ReplyNotFound(w http.ResponseWriter, err string) error {
 		"error": err,
 	})
 }
+
+func ReplyUnavailable(w http.ResponseWriter, err string) error {
+	return ReplyJSON(w, http.StatusServiceUnavailable, Body{
+		"error": err,
+	})
+}

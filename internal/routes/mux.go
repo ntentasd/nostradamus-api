@@ -13,6 +13,7 @@ func NewMux(app *App) http.Handler {
 
 	// health check
 	mux.HandleFunc("/healthz", healthHandler)
+	mux.HandleFunc("/readyz", app.readyHandler)
 
 	// metrics
 	mux.Handle("/metrics", promhttp.Handler())

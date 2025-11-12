@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,28 @@ import (
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	utils.ReplyJSON(w, http.StatusOK, utils.Body{
 		"state": "healthy",
+	})
+}
+
+func (app *App) readyHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := app.Store.Meta.Query(`
+SELECT now()
+FROM system.local
+	`).WithContext(ctx).Exec(); err != nil {
+		utils.ReplyUnavailable(w, "scylla unavailable")
+		return
+	}
+
+	if err := app.Cache.Ping(ctx); err != nil {
+		utils.ReplyUnavailable(w, fmt.Sprintf("%s unavailable", app.config.driver))
+		return
+	}
+
+	utils.ReplyJSON(w, http.StatusOK, utils.Body{
+		"state": "ready",
 	})
 }
 
