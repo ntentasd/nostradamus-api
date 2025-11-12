@@ -22,6 +22,9 @@ type Cache interface {
 	// FetchAggregate retrieves an aggregate from cache
 	FetchAggregate(ctx context.Context, key string) ([]byte, error)
 
+	// Ping checks cache connection
+	Ping(ctx context.Context) error
+
 	// Close gracefully closes any connections
 	Close()
 }

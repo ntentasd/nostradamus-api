@@ -22,9 +22,21 @@ type Memcached struct {
 
 func NewMemcached(addr string) *Memcached {
 	client := memcache.New(addr)
-	client.Timeout = time.Millisecond * 100
 	cm := NewCacheMetrics("memcached")
 	return &Memcached{client, cm}
+}
+
+func (m *Memcached) store(key string, val []byte, ttl time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- m.client.Set(&memcache.Item{Key: key, Value: val, Expiration: int32(ttl.Seconds())})
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(100 * time.Millisecond):
+		return context.DeadlineExceeded
+	}
 }
 
 func (m *Memcached) Store(prefix string, entry types.Entry) error {
@@ -55,7 +67,7 @@ func (m *Memcached) StoreAggregate(ctx context.Context, key string, data any, tt
 	}
 
 	start := time.Now()
-	if err := m.client.Set(&memcache.Item{Key: key, Value: b, Expiration: int32(ttl.Seconds())}); err != nil {
+	if err := m.store(key, b, ttl); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("failed to store aggregate: %w", err)
@@ -93,6 +105,10 @@ func (m *Memcached) FetchAggregate(ctx context.Context, key string) ([]byte, err
 		span.SetStatus(codes.Ok, "")
 		return val.Value, nil
 	}
+}
+
+func (m *Memcached) Ping(ctx context.Context) error {
+	return m.client.Ping()
 }
 
 func (m *Memcached) Close() {

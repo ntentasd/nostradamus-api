@@ -24,6 +24,7 @@ type Valkey struct {
 func NewValkey(addrs []string) *Valkey {
 	opts := &redis.ClusterOptions{Addrs: addrs}
 	client := redis.NewClusterClient(opts)
+	client.Options().DialTimeout = 2 * time.Second
 	cm := NewCacheMetrics("valkey")
 	return &Valkey{client, cm}
 }
@@ -100,7 +101,7 @@ func (v *Valkey) StoreAggregate(ctx context.Context, key string, data any, ttl t
 
 	ctx, cancel := context.WithTimeout(
 		ctx,
-		time.Millisecond*100,
+		time.Millisecond*200,
 	)
 	defer cancel()
 
@@ -156,6 +157,10 @@ func (v *Valkey) FetchAggregate(ctx context.Context, key string) ([]byte, error)
 		span.SetStatus(codes.Ok, "")
 		return val, nil
 	}
+}
+
+func (v *Valkey) Ping(ctx context.Context) error {
+	return v.client.Ping(ctx).Err()
 }
 
 func (v *Valkey) Close() {

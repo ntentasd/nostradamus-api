@@ -82,12 +82,17 @@ func main() {
 		log.Fatal().Msg("only one of VALKEY_NODES or MEMCACHED_NODE may be set")
 	}
 
-	var c cache.Cache
+	var (
+		c      cache.Cache
+		config *routes.Config
+	)
 	if len(valkeyAddrs) > 0 {
 		c = cache.NewValkey(valkeyAddrs)
+		config = routes.NewConfig("valkey")
 		log.Info().Msg("using Valkey cache driver")
 	} else {
 		c = cache.NewMemcached(memcachedAddr)
+		config = routes.NewConfig("memcached")
 		log.Info().Msg("using Memcached cache driver")
 	}
 	defer c.Close()
@@ -119,7 +124,7 @@ func main() {
 	emqxClient := emqx.New()
 
 	appLogger := log.Logger.With().Str("component", "app").Logger()
-	app := routes.New(store, c, ac, emqxClient, appLogger)
+	app := routes.New(store, c, ac, emqxClient, appLogger, config)
 
 	shutdown := tracing.InitTracer()
 	defer shutdown(context.Background())
@@ -137,6 +142,9 @@ func main() {
 	sv := worker.NewSupervisor(ac, time.Second*5, supervisorLogger)
 	sv.Start(context.Background())
 	defer sv.Stop()
+
+	log.Info().Msg("Warming up connections")
+	app.WarmUp()
 
 	log.Info().Msg("Listening on port :8080")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
